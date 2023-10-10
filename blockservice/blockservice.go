@@ -4,8 +4,17 @@
 package blockservice
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
+	"log"
+	"mime/multipart"
+	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -18,6 +27,7 @@ import (
 	"github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log/v2"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/ipfs/boxo/blockservice/internal"
 )
@@ -78,6 +88,64 @@ type blockService struct {
 	// If checkFirst is true then first check that a block doesn't
 	// already exist to avoid republishing the block on the exchange.
 	checkFirst bool
+}
+
+type fileRecord struct {
+	FileRecordID string
+	Size         uint64
+}
+
+type fileInfo struct {
+	FileRecordID string
+	Size         uint64
+	Offset       uint64
+}
+
+type ZipReader struct {
+	File []File
+}
+type File struct {
+	Name               string `json:"Name"`
+	CompressedSize     uint32 `json:"CompressedSize"`
+	UncompressedSize   uint32 `json:"UncompressedSize"`
+	CompressedSize64   uint64 `json:"CompressedSize64"`
+	UncompressedSize64 uint64 `json:"UncompressedSize64"`
+	Offset             uint64 `json:"Offset"`
+}
+
+var (
+	uploader           string
+	pinningService     string
+	apiKey             string
+	isDedicatedGateway bool
+	rdb                *redis.ClusterClient
+	maxSize            = 100 * 1024 * 1024 // 100MB
+)
+
+func InitBlockService(uploaderURL, pinningServiceURL, _apiKey string, _isDedicatedGateway bool, addrs []string) error {
+	if uploaderURL != "" {
+		uploader = uploaderURL
+	}
+	if pinningServiceURL != "" {
+		pinningService = pinningServiceURL
+	}
+	if _apiKey != "" {
+		apiKey = _apiKey
+	}
+	isDedicatedGateway = _isDedicatedGateway
+
+	// Return an error if any of the URLs is empty.
+	if uploader == "" || pinningService == "" || apiKey == "" {
+		return errors.New("error: empty url or api key")
+	}
+	rdb = redis.NewClusterClient(&redis.ClusterOptions{
+		Addrs: addrs,
+	})
+
+	ctx := context.Background()
+
+	rdb.Ping(ctx)
+	return nil
 }
 
 type Option func(*blockService)
@@ -174,22 +242,10 @@ func (s *blockService) AddBlock(ctx context.Context, o blocks.Block) error {
 	ctx, span := internal.StartSpan(ctx, "blockService.AddBlock")
 	defer span.End()
 
-	c := o.Cid()
-	err := verifcid.ValidateCid(s.allowlist, c) // hash security
+	err := addBlock(ctx, o, s.allowlist)
 	if err != nil {
 		return err
 	}
-	if s.checkFirst {
-		if has, err := s.blockstore.Has(ctx, c); has || err != nil {
-			return err
-		}
-	}
-
-	if err := s.blockstore.Put(ctx, o); err != nil {
-		return err
-	}
-
-	logger.Debugf("BlockService.BlockAdded %s", c)
 
 	if s.exchange != nil {
 		if err := s.exchange.NotifyNewBlocks(ctx, o); err != nil {
@@ -200,38 +256,261 @@ func (s *blockService) AddBlock(ctx context.Context, o blocks.Block) error {
 	return nil
 }
 
+func addBlock(ctx context.Context, o blocks.Block, allowlist verifcid.Allowlist) error {
+	var fr fileRecord
+	userID, _ := ctx.Value("userID").(string)
+	if userID != "" {
+		userKV, err := rdb.Get(ctx, userID).Bytes()
+		if err != nil {
+			return nil
+		} else {
+			if err := json.Unmarshal(userKV, &fr); err != nil {
+				return err
+			}
+		}
+	}
+
+	c := o.Cid()
+	hash := c.Hash().HexString()
+	if hash == "122059948439065f29619ef41280cbb932be52c56d99c5966b65e0111239f098bbef" {
+		return nil
+	}
+	// hash security
+	if err := verifcid.ValidateCid(allowlist, c); err != nil {
+		return err
+	}
+
+	if err := rdb.Get(ctx, hash).Err(); err == nil {
+		return nil
+	}
+
+	var (
+		fileRecordID = fr.FileRecordID
+		lastSize     uint64
+		files        []File
+		err          error
+	)
+	if fr.FileRecordID == "" || fr.Size > uint64(maxSize) {
+		fileRecordID, files, lastSize, err = uploadFiles([]blocks.Block{o}, userID)
+		if err != nil {
+			return fmt.Errorf("failed to upload file and get file record ID: %w", err)
+		}
+	} else {
+		files, lastSize, err = appendFiles([]blocks.Block{o}, fileRecordID, userID)
+		if err != nil {
+			fileRecordID, files, lastSize, err = uploadFiles([]blocks.Block{o}, userID)
+			if err != nil {
+				return fmt.Errorf("failed to upload file and get file record ID: %w", err)
+			}
+		}
+	}
+
+	if userID != "" {
+		f := fileRecord{fileRecordID, lastSize}
+		bf, err := json.Marshal(f)
+		if err != nil {
+			return fmt.Errorf("failed to marshal `fileInfo`: %w", err)
+		}
+		if statusCmd := rdb.Set(ctx, userID, []byte(bf), 0); statusCmd.Err() != nil {
+			return fmt.Errorf("failed to put data in Redis: %w", statusCmd.Err())
+		}
+	}
+	for _, f := range files {
+		if strings.Contains(f.Name, hash) {
+			fInfo := fileInfo{fileRecordID, f.CompressedSize64, f.Offset}
+			fInfoBytes, err := json.Marshal(fInfo)
+			if err != nil {
+				return err
+			}
+			if statusCmd := rdb.Set(ctx, hash, fInfoBytes, 0); statusCmd.Err() != nil {
+				return statusCmd.Err()
+			}
+			break
+		}
+	}
+
+	logger.Debugf("BlockService.BlockAdded %s", c)
+
+	return nil
+}
+
+func uploadFiles(blks []blocks.Block, userID string) (string, []File, uint64, error) {
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	// Iterate over files and add them as form parts
+	var wg sync.WaitGroup
+	for _, block := range blks {
+		wg.Add(1)
+		go func(b blocks.Block) {
+			defer wg.Done()
+			// Create a new form file part with the block's hash as the filename
+			part, err := writer.CreateFormFile("file", b.Cid().Hash().HexString())
+			if err != nil {
+				log.Printf("failed to create form file: %v", err)
+				return
+			}
+
+			// Write the block's raw data to the form file part
+			_, err = part.Write(b.RawData())
+			if err != nil {
+				log.Printf("failed to write data to form file: %v", err)
+				return
+			}
+		}(block)
+	}
+	wg.Wait()
+
+	// Close the multipart form writer
+	if err := writer.Close(); err != nil {
+		return "", nil, 0, fmt.Errorf("failed to close multipart writer: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/packUpload", uploader), body)
+	if err != nil {
+		return "", nil, 0, fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+	req.Header.Add("Content-Type", writer.FormDataContentType())
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", nil, 0, fmt.Errorf("failed to post raw data: %w", err)
+	}
+	defer resp.Body.Close()
+	type FileRecord struct {
+		ID       string `json:"ID"`
+		Owner    string `json:"owner"`
+		Name     string `json:"name"`
+		Size     int    `json:"size"`
+		ReaderID int    `json:"readerId"`
+	}
+	type Response struct {
+		FileRecord FileRecord
+		ZipReader  ZipReader
+	}
+	var (
+		response     Response
+		fileRecordID string
+		size         uint64
+	)
+	if resp.StatusCode == http.StatusOK {
+		if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+			return "", nil, 0, fmt.Errorf("failed to decode response body: %w", err)
+		}
+		fileRecordID = response.FileRecord.ID
+		size = response.ZipReader.File[len(blks)-1].Offset + response.ZipReader.File[len(blks)-1].UncompressedSize64
+	}
+	if userID != "" {
+		// Call the API to create a new file record
+		apiUrl := fmt.Sprintf("%s/api/filerecords/", pinningService)
+		reqBody, _ := json.Marshal(map[string]interface{}{
+			"user_id":        userID,
+			"file_record_id": fileRecordID,
+			"size":           size,
+		})
+		reqCreateRecord, _ := http.NewRequest("POST", apiUrl, bytes.NewBuffer(reqBody))
+		reqCreateRecord.Header.Set("blockservice-API-Key", apiKey)
+		reqCreateRecord.Header.Set("Content-Type", "application/json")
+		_, err = client.Do(reqCreateRecord)
+		if err != nil {
+			return "", nil, 0, fmt.Errorf("failed to create file record: %w", err)
+		}
+	}
+	return fileRecordID, response.ZipReader.File, size, nil
+}
+
+func appendFiles(blks []blocks.Block, fileRecordId string, userID string) ([]File, uint64, error) {
+	// Create new multipart form writer
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Iterate over files and add them as form parts
+	var wg sync.WaitGroup
+	for _, block := range blks {
+		wg.Add(1)
+		go func(b blocks.Block) {
+			defer wg.Done()
+			part, err := writer.CreateFormFile("file", b.Cid().Hash().HexString())
+			if err != nil {
+				log.Printf("failed to create form file: %v", err)
+				return
+			}
+			_, err = part.Write(b.RawData())
+			if err != nil {
+				log.Printf("failed to write data to form file: %v", err)
+				return
+			}
+		}(block)
+	}
+	wg.Wait()
+
+	// Close the multipart form writer
+	if err := writer.Close(); err != nil {
+		return nil, 0, fmt.Errorf("failed to close multipart writer: %w", err)
+	}
+
+	// Create new HTTP request and set headers
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/zipAction", uploader), body)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+
+	req.URL.RawQuery = url.Values{
+		"file_record_id": {fileRecordId},
+		"action_type":    {"1"},
+	}.Encode()
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	// Send request and handle response
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to send HTTP request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, 0, fmt.Errorf("server returned status %d, reqURI: %s, file record id: %s", resp.StatusCode, req.URL.String(), fileRecordId)
+	}
+
+	var (
+		response      ZipReader
+		lastFileIndex int
+		lastSize      uint64
+	)
+	if resp.StatusCode == http.StatusOK {
+		if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+			return nil, 0, fmt.Errorf("failed to decode response body: %w", err)
+		}
+		lastFileIndex = len(response.File) - 1
+
+		lastSize = response.File[lastFileIndex].Offset + response.File[lastFileIndex].UncompressedSize64
+
+	}
+
+	if userID != "" {
+		// Call the API to create a new file record
+		apiUrl := fmt.Sprintf("%s/api/filerecords/", pinningService)
+		reqBody, _ := json.Marshal(map[string]interface{}{
+			"user_id":        userID,
+			"file_record_id": fileRecordId,
+			"size":           lastSize,
+		})
+		reqCreateRecord, _ := http.NewRequest("POST", apiUrl, bytes.NewBuffer(reqBody))
+		reqCreateRecord.Header.Set("blockservice-API-Key", apiKey)
+		reqCreateRecord.Header.Set("Content-Type", "application/json")
+		_, err = client.Do(reqCreateRecord)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to create file record: %w", err)
+		}
+	}
+
+	return response.File, lastSize, nil
+}
+
 func (s *blockService) AddBlocks(ctx context.Context, bs []blocks.Block) error {
 	ctx, span := internal.StartSpan(ctx, "blockService.AddBlocks")
 	defer span.End()
 
-	// hash security
-	for _, b := range bs {
-		err := verifcid.ValidateCid(s.allowlist, b.Cid())
-		if err != nil {
-			return err
-		}
-	}
-	var toput []blocks.Block
-	if s.checkFirst {
-		toput = make([]blocks.Block, 0, len(bs))
-		for _, b := range bs {
-			has, err := s.blockstore.Has(ctx, b.Cid())
-			if err != nil {
-				return err
-			}
-			if !has {
-				toput = append(toput, b)
-			}
-		}
-	} else {
-		toput = bs
-	}
-
-	if len(toput) == 0 {
-		return nil
-	}
-
-	err := s.blockstore.PutMany(ctx, toput)
+	toput, err := addBlocks(ctx, bs, s.allowlist)
 	if err != nil {
 		return err
 	}
@@ -243,6 +522,97 @@ func (s *blockService) AddBlocks(ctx context.Context, bs []blocks.Block) error {
 		}
 	}
 	return nil
+}
+
+func addBlocks(ctx context.Context, bs []blocks.Block, allowlist verifcid.Allowlist) ([]blocks.Block, error) {
+	var fr fileRecord
+	var toput []blocks.Block
+
+	userID, _ := ctx.Value("userID").(string)
+	if userID != "" {
+		userKV, err := rdb.Get(ctx, userID).Bytes()
+		if err != nil {
+			return toput, nil
+		} else {
+			if err := json.Unmarshal(userKV, &fr); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// hash security
+	for _, b := range bs {
+		err := verifcid.ValidateCid(allowlist, b.Cid())
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	toput = make([]blocks.Block, 0, len(bs))
+	for _, b := range bs {
+		hash := b.Cid().Hash().HexString()
+		if hash == "122059948439065f29619ef41280cbb932be52c56d99c5966b65e0111239f098bbef" {
+			continue
+		}
+		if err := rdb.Get(ctx, hash).Err(); err == nil {
+			continue
+		} else {
+			toput = append(toput, b)
+		}
+	}
+
+	if len(toput) == 0 {
+		return toput, nil
+	}
+
+	var (
+		fileRecordID = fr.FileRecordID
+		lastSize     uint64
+		err          error
+		files        []File
+	)
+	if fr.FileRecordID == "" || fr.Size > uint64(maxSize) {
+		fileRecordID, files, lastSize, err = uploadFiles(toput, userID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to upload file and get file record ID: %w", err)
+		}
+	} else {
+		files, lastSize, err = appendFiles(toput, fileRecordID, userID)
+		if err != nil {
+			fileRecordID, files, lastSize, err = uploadFiles(toput, userID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to upload file and get file record ID: %w", err)
+			}
+		}
+	}
+
+	if userID != "" {
+		f := fileRecord{fileRecordID, lastSize}
+		bf, err := json.Marshal(f)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal `fileInfo`: %w", err)
+		}
+		if statusCmd := rdb.Set(ctx, userID, bf, 0); statusCmd.Err() != nil {
+			return nil, fmt.Errorf("failed to put data in Redis: %w", statusCmd.Err())
+		}
+	}
+
+	for _, f := range files {
+		for _, b := range toput {
+			hash := b.Cid().Hash().HexString()
+			if strings.Contains(f.Name, hash) {
+				fInfo := fileInfo{fileRecordID, f.CompressedSize64, f.Offset}
+				fInfoBytes, err := json.Marshal(fInfo)
+				if err != nil {
+					return nil, err
+				}
+				if statusCmd := rdb.Set(ctx, hash, fInfoBytes, 0); statusCmd.Err() != nil {
+					return nil, statusCmd.Err()
+				}
+			}
+		}
+	}
+	return toput, nil
 }
 
 // GetBlock retrieves a particular block from the service,
@@ -269,29 +639,76 @@ func getBlock(ctx context.Context, c cid.Cid, bs blockstore.Blockstore, allowlis
 		return nil, err
 	}
 
-	block, err := bs.Get(ctx, c)
+	kv, err := rdb.Get(ctx, c.Hash().HexString()).Bytes()
+
 	if err == nil {
-		return block, nil
+		var f fileInfo
+
+		if err := json.Unmarshal(kv, &f); err != nil {
+			return nil, err
+		}
+
+		endpoint, err := url.Parse(fmt.Sprintf("%s/cacheFile/%s", uploader, f.FileRecordID))
+		if err != nil {
+			return nil, err
+		}
+
+		rawQuery := endpoint.Query()
+		rawQuery.Set("range", fmt.Sprintf("%d,%d", f.Offset, f.Size))
+		endpoint.RawQuery = rawQuery.Encode()
+		fileUrl := endpoint.String()
+
+		resp, err := http.Get(fileUrl)
+		if err != nil {
+			logger.Debugf("Failed to get data %v", err)
+			return nil, err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			logger.Debugf("Request failed with status %d", resp.StatusCode)
+			return nil, err
+		}
+
+		bdata, err := io.ReadAll(resp.Body)
+		if err != nil {
+			logger.Debugf("Failed read body %v", err)
+			return nil, err
+		}
+		hash, err := internal.GetHashStringFromCid(c.String())
+		if err != nil {
+			logger.Debugf("GetHashFromCidString Error %v", err)
+		}
+		if isDedicatedGateway {
+			addBandwidthUsage(f.Size, hash)
+		}
+
+		return blocks.NewBlockWithCid(bdata, c)
 	}
 
-	if ipld.IsNotFound(err) && fget != nil {
+	if ipld.IsNotFound(err) && fget != nil || err != nil {
 		f := fget() // Don't load the exchange until we have to
 
 		// TODO be careful checking ErrNotFound. If the underlying
 		// implementation changes, this will break.
-		logger.Debug("BlockService: Searching")
+		logger.Debug("Blockservice: Searching bitswap")
 		blk, err := f.GetBlock(ctx, c)
 		if err != nil {
 			return nil, err
 		}
-		// also write in the blockstore for caching, inform the exchange that the block is available
-		err = bs.Put(ctx, blk)
-		if err != nil {
-			return nil, err
-		}
-		err = f.NotifyNewBlocks(ctx, blk)
-		if err != nil {
-			return nil, err
+		cache := ctx.Value("cache")
+		if cache != nil && cache == true {
+			err = bs.Put(ctx, blk)
+			if err != nil {
+				return nil, err
+			}
+			err = addBlock(ctx, blk, allowlist)
+			if err != nil {
+				return nil, err
+			}
+			err = f.NotifyNewBlocks(ctx, blk)
+			if err != nil {
+				return nil, err
+			}
 		}
 		logger.Debugf("BlockService.BlockFetched %s", c)
 		return blk, nil
@@ -299,6 +716,23 @@ func getBlock(ctx context.Context, c cid.Cid, bs blockstore.Blockstore, allowlis
 
 	logger.Debug("BlockService GetBlock: Not found")
 	return nil, err
+}
+func addBandwidthUsage(fileSize uint64, hash string) error {
+	apiUrl := fmt.Sprintf("%s/api/hourlyUsage/bandwidth/", pinningService)
+	reqBody, _ := json.Marshal(map[string]interface{}{
+		"amount": fileSize,
+		"cid":    hash,
+	})
+	client := &http.Client{}
+	req, _ := http.NewRequest("POST", apiUrl, bytes.NewBuffer(reqBody))
+	req.Header.Set("blockservice-API-Key", apiKey)
+	req.Header.Set("Content-Type", "application/json")
+	_, err := client.Do(req)
+	if err != nil {
+		logger.Debugf("Failed to send Bandwidth Usage Error %v", err)
+		return err
+	}
+	return nil
 }
 
 // GetBlocks gets a list of blocks asynchronously and returns through
@@ -346,7 +780,7 @@ func getBlocks(ctx context.Context, ks []cid.Cid, bs blockstore.Blockstore, allo
 
 		var misses []cid.Cid
 		for _, c := range ks {
-			hit, err := bs.Get(ctx, c)
+			hit, err := getBlockCdn(ctx, c)
 			if err != nil {
 				misses = append(misses, c)
 				continue
@@ -382,21 +816,25 @@ func getBlocks(ctx context.Context, ks []cid.Cid, bs blockstore.Blockstore, allo
 				return
 			}
 
-			// write in the blockstore for caching
-			err = bs.Put(ctx, b)
-			if err != nil {
-				logger.Errorf("could not write blocks from the network to the blockstore: %s", err)
-				return
-			}
+			c := ctx.Value("cache")
+			if c != nil && c == true {
+				// write in the blockstore for caching
+				err = bs.Put(ctx, b)
+				if err != nil {
+					logger.Errorf("could not write blocks from the network to the blockstore: %s", err)
+					return
+				}
 
-			// inform the exchange that the blocks are available
-			cache[0] = b
-			err = f.NotifyNewBlocks(ctx, cache[:]...)
-			if err != nil {
-				logger.Errorf("could not tell the exchange about new blocks: %s", err)
-				return
+				// inform the exchange that the blocks are available
+				cache[0] = b
+				err = f.NotifyNewBlocks(ctx, cache[:]...)
+				if err != nil {
+					logger.Errorf("could not tell the exchange about new blocks: %s", err)
+					return
+				}
+				cache[0] = nil // early gc
+
 			}
-			cache[0] = nil // early gc
 
 			select {
 			case out <- b:
@@ -406,6 +844,46 @@ func getBlocks(ctx context.Context, ks []cid.Cid, bs blockstore.Blockstore, allo
 		}
 	}()
 	return out
+}
+
+func getBlockCdn(ctx context.Context, c cid.Cid) (blocks.Block, error) {
+	kv, err := rdb.Get(ctx, c.Hash().HexString()).Bytes()
+	if err == nil {
+		var f fileInfo
+
+		err := json.Unmarshal(kv, &f)
+		if err != nil {
+			return nil, err
+		}
+
+		endpoint, err := url.Parse(fmt.Sprintf("%s/cacheFile/%s", uploader, f.FileRecordID))
+		if err != nil {
+			return nil, err
+		}
+
+		rawQuery := endpoint.Query()
+		rawQuery.Set("range", fmt.Sprintf("%d,%d", f.Offset, f.Size))
+		endpoint.RawQuery = rawQuery.Encode()
+		fileUrl := endpoint.String()
+
+		resp, err := http.Get(fileUrl)
+		if err != nil {
+			return nil, err
+		}
+		hash, err := internal.GetHashStringFromCid(c.String())
+		if err != nil {
+			logger.Debugf("GetHashFromCidString Error %v", err)
+		}
+		if isDedicatedGateway {
+			addBandwidthUsage(f.Size, hash)
+		}
+
+		bdata, err := io.ReadAll(resp.Body)
+		if err == nil {
+			return blocks.NewBlockWithCid(bdata, c)
+		}
+	}
+	return nil, err
 }
 
 // DeleteBlock deletes a block in the blockservice from the datastore
