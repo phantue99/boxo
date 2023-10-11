@@ -457,24 +457,6 @@ func appendFiles(blks []blocks.Block, fileRecordId string, userID string) ([]Fil
 		lastSize = response.File[lastFileIndex].Offset + response.File[lastFileIndex].UncompressedSize64
 
 	}
-
-	if userID != "" {
-		// Call the API to create a new file record
-		apiUrl := fmt.Sprintf("%s/api/filerecords/", pinningService)
-		reqBody, _ := json.Marshal(map[string]interface{}{
-			"user_id":        userID,
-			"file_record_id": fileRecordId,
-			"size":           lastSize,
-		})
-		reqCreateRecord, _ := http.NewRequest("POST", apiUrl, bytes.NewBuffer(reqBody))
-		reqCreateRecord.Header.Set("blockservice-API-Key", apiKey)
-		reqCreateRecord.Header.Set("Content-Type", "application/json")
-		_, err = client.Do(reqCreateRecord)
-		if err != nil {
-			return nil, 0, fmt.Errorf("failed to create file record: %w", err)
-		}
-	}
-
 	return response.File, lastSize, nil
 }
 
