@@ -338,27 +338,21 @@ func uploadFiles(blks []blocks.Block, userID string) (string, []File, uint64, er
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	// Iterate over files and add them as form parts
-	var wg sync.WaitGroup
 	for _, block := range blks {
-		wg.Add(1)
-		go func(b blocks.Block) {
-			defer wg.Done()
-			// Create a new form file part with the block's hash as the filename
-			part, err := writer.CreateFormFile("file", b.Cid().Hash().HexString())
-			if err != nil {
-				log.Printf("failed to create form file: %v", err)
-				return
-			}
+		// Create a new form file part with the block's hash as the filename
+		part, err := writer.CreateFormFile("file", block.Cid().Hash().HexString())
+		if err != nil {
+			log.Printf("failed to create form file: %v", err)
+			return "", nil, 0, err
+		}
 
-			// Write the block's raw data to the form file part
-			_, err = part.Write(b.RawData())
-			if err != nil {
-				log.Printf("failed to write data to form file: %v", err)
-				return
-			}
-		}(block)
+		// Write the block's raw data to the form file part
+		_, err = part.Write(block.RawData())
+		if err != nil {
+			log.Printf("failed to write data to form file: %v", err)
+			return "", nil, 0, err
+		}
 	}
-	wg.Wait()
 
 	// Close the multipart form writer
 	if err := writer.Close(); err != nil {
@@ -424,24 +418,18 @@ func appendFiles(blks []blocks.Block, fileRecordId string, userID string) ([]Fil
 	writer := multipart.NewWriter(body)
 
 	// Iterate over files and add them as form parts
-	var wg sync.WaitGroup
 	for _, block := range blks {
-		wg.Add(1)
-		go func(b blocks.Block) {
-			defer wg.Done()
-			part, err := writer.CreateFormFile("file", b.Cid().Hash().HexString())
-			if err != nil {
-				log.Printf("failed to create form file: %v", err)
-				return
-			}
-			_, err = part.Write(b.RawData())
-			if err != nil {
-				log.Printf("failed to write data to form file: %v", err)
-				return
-			}
-		}(block)
+		part, err := writer.CreateFormFile("file", block.Cid().Hash().HexString())
+		if err != nil {
+			log.Printf("failed to create form file: %v", err)
+			return nil, 0, err
+		}
+		_, err = part.Write(block.RawData())
+		if err != nil {
+			log.Printf("failed to write data to form file: %v", err)
+			return nil, 0, err
+		}
 	}
-	wg.Wait()
 
 	// Close the multipart form writer
 	if err := writer.Close(); err != nil {
