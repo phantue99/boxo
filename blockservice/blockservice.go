@@ -99,7 +99,6 @@ type fileInfo struct {
 	FileRecordID string
 	Size         uint64
 	Offset       uint64
-	LastSize     uint64
 }
 
 type ZipReader struct {
@@ -318,7 +317,7 @@ func addBlock(ctx context.Context, o blocks.Block, allowlist verifcid.Allowlist)
 	}
 	for _, f := range files {
 		if strings.Contains(f.Name, hash) {
-			fInfo := fileInfo{fileRecordID, f.CompressedSize64, f.Offset, lastSize}
+			fInfo := fileInfo{fileRecordID, f.CompressedSize64, f.Offset}
 			fInfoBytes, err := json.Marshal(fInfo)
 			if err != nil {
 				return err
@@ -574,7 +573,7 @@ func addBlocks(ctx context.Context, bs []blocks.Block, allowlist verifcid.Allowl
 		for _, b := range toput {
 			hash := b.Cid().Hash().HexString()
 			if strings.Contains(f.Name, hash) {
-				fInfo := fileInfo{fileRecordID, f.CompressedSize64, f.Offset, lastSize}
+				fInfo := fileInfo{fileRecordID, f.CompressedSize64, f.Offset}
 				fInfoBytes, err := json.Marshal(fInfo)
 				if err != nil {
 					return nil, err
