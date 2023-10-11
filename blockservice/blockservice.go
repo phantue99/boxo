@@ -99,6 +99,7 @@ type fileInfo struct {
 	FileRecordID string
 	Size         uint64
 	Offset       uint64
+	LastSize     uint64
 }
 
 type ZipReader struct {
@@ -317,7 +318,7 @@ func addBlock(ctx context.Context, o blocks.Block, allowlist verifcid.Allowlist)
 	}
 	for _, f := range files {
 		if strings.Contains(f.Name, hash) {
-			fInfo := fileInfo{fileRecordID, f.CompressedSize64, f.Offset}
+			fInfo := fileInfo{fileRecordID, f.CompressedSize64, f.Offset, lastSize}
 			fInfoBytes, err := json.Marshal(fInfo)
 			if err != nil {
 				return err
@@ -392,22 +393,6 @@ func uploadFiles(blks []blocks.Block, userID string) (string, []File, uint64, er
 		}
 		fileRecordID = response.FileRecord.ID
 		size = response.ZipReader.File[len(blks)-1].Offset + response.ZipReader.File[len(blks)-1].UncompressedSize64
-	}
-	if userID != "" {
-		// Call the API to create a new file record
-		apiUrl := fmt.Sprintf("%s/api/filerecords/", pinningService)
-		reqBody, _ := json.Marshal(map[string]interface{}{
-			"user_id":        userID,
-			"file_record_id": fileRecordID,
-			"size":           size,
-		})
-		reqCreateRecord, _ := http.NewRequest("POST", apiUrl, bytes.NewBuffer(reqBody))
-		reqCreateRecord.Header.Set("blockservice-API-Key", apiKey)
-		reqCreateRecord.Header.Set("Content-Type", "application/json")
-		_, err = client.Do(reqCreateRecord)
-		if err != nil {
-			return "", nil, 0, fmt.Errorf("failed to create file record: %w", err)
-		}
 	}
 	return fileRecordID, response.ZipReader.File, size, nil
 }
@@ -589,7 +574,7 @@ func addBlocks(ctx context.Context, bs []blocks.Block, allowlist verifcid.Allowl
 		for _, b := range toput {
 			hash := b.Cid().Hash().HexString()
 			if strings.Contains(f.Name, hash) {
-				fInfo := fileInfo{fileRecordID, f.CompressedSize64, f.Offset}
+				fInfo := fileInfo{fileRecordID, f.CompressedSize64, f.Offset, lastSize}
 				fInfoBytes, err := json.Marshal(fInfo)
 				if err != nil {
 					return nil, err
