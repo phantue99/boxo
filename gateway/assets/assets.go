@@ -110,6 +110,7 @@ type DirectoryTemplateData struct {
 	Listing     []DirectoryItem
 	Size        string
 	Path        string
+	GatewayURL string
 	Breadcrumbs []Breadcrumb
 	BackLink    string
 	Hash        string

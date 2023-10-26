@@ -198,6 +198,7 @@ func (i *handler) serveDirectory(ctx context.Context, w http.ResponseWriter, r *
 		Listing:     dirListing,
 		Size:        size,
 		Path:        contentPath.String(),
+		GatewayURL:  globalData.GatewayURL,
 		Breadcrumbs: assets.Breadcrumbs(contentPath.String(), globalData.DNSLink),
 		BackLink:    backLink,
 		Hash:        hash,
