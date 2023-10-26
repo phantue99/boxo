@@ -628,10 +628,7 @@ func getBlock(ctx context.Context, c cid.Cid, bs blockstore.Blockstore, allowlis
 			logger.Debugf("Failed read body %v", err)
 			return nil, err
 		}
-		hash, err := internal.GetHashStringFromCid(c.String())
-		if err != nil {
-			logger.Debugf("GetHashFromCidString Error %v", err)
-		}
+		hash := c.Hash().HexString()
 		if isDedicatedGateway {
 			addBandwidthUsage(f.Size, hash)
 		}
@@ -824,10 +821,7 @@ func getBlockCdn(ctx context.Context, c cid.Cid) (blocks.Block, error) {
 		if err != nil {
 			return nil, err
 		}
-		hash, err := internal.GetHashStringFromCid(c.String())
-		if err != nil {
-			logger.Debugf("GetHashFromCidString Error %v", err)
-		}
+		hash := c.Hash().HexString()
 		if isDedicatedGateway {
 			addBandwidthUsage(f.Size, hash)
 		}
