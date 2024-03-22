@@ -392,6 +392,8 @@ func uploadFiles(blks []blocks.Block, userID string) (string, []File, uint64, er
 		}
 		fileRecordID = response.FileRecord.ID
 		size = response.ZipReader.File[len(blks)-1].Offset + response.ZipReader.File[len(blks)-1].UncompressedSize64
+	} else {
+		return "", nil, 0, fmt.Errorf("server returned status %d", resp.StatusCode)
 	}
 	return fileRecordID, response.ZipReader.File, size, nil
 }
@@ -455,7 +457,8 @@ func appendFiles(blks []blocks.Block, fileRecordId string, userID string) ([]Fil
 		lastFileIndex = len(response.File) - 1
 
 		lastSize = response.File[lastFileIndex].Offset + response.File[lastFileIndex].UncompressedSize64
-
+	} else {
+		return nil, 0, fmt.Errorf("server returned status %d", resp.StatusCode)
 	}
 	return response.File, lastSize, nil
 }
