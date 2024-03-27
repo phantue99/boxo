@@ -82,9 +82,11 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 	// (unifies behavior across gateways and web browsers)
 	w.Header().Set("Content-Type", ctype)
 
+	limitReader := RateLimitReader(i.isDedicatedGateway, content)
+
 	// ServeContent will take care of
 	// If-None-Match+Etag, Content-Length and range requests
-	_, dataSent, _ := serveContent(w, r, modtime, fileSize, content)
+	_, dataSent, _ := serveContent(w, r, modtime, fileSize, limitReader)
 
 	// Was response successful?
 	if dataSent {

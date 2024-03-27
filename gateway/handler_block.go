@@ -48,9 +48,11 @@ func (i *handler) serveRawBlock(ctx context.Context, w http.ResponseWriter, r *h
 		return false
 	}
 
+	limitReader := RateLimitReader(i.isDedicatedGateway, data)
+
 	// ServeContent will take care of
 	// If-None-Match+Etag, Content-Length and range requests
-	_, dataSent, _ := serveContent(w, r, modtime, sz, data)
+	_, dataSent, _ := serveContent(w, r, modtime, sz, limitReader)
 
 	if dataSent {
 		// Update metrics

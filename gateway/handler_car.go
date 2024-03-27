@@ -85,7 +85,9 @@ func (i *handler) serveCAR(ctx context.Context, w http.ResponseWriter, r *http.R
 	w.Header().Set("Content-Type", buildContentTypeFromCarParams(params))
 	w.Header().Set("X-Content-Type-Options", "nosniff") // no funny business in the browsers :^)
 
-	_, copyErr := io.Copy(w, carFile)
+	limitReader := RateLimitReader(i.isDedicatedGateway, carFile)
+
+	_, copyErr := io.Copy(w, limitReader)
 	carErr := carFile.Close()
 	streamErr := multierr.Combine(carErr, copyErr)
 	if streamErr != nil {

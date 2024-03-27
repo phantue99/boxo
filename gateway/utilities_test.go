@@ -218,7 +218,7 @@ func newTestServer(t *testing.T, backend IPFSBackend) *httptest.Server {
 func newTestServerWithConfig(t *testing.T, backend IPFSBackend, config Config) *httptest.Server {
 	AddAccessControlHeaders(config.Headers)
 
-	handler := NewHandler(config, backend)
+	handler := NewHandler(config, backend, true)
 	mux := http.NewServeMux()
 	mux.Handle("/ipfs/", handler)
 	mux.Handle("/ipns/", handler)
