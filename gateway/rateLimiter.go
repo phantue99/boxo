@@ -6,7 +6,7 @@ import (
 	"github.com/juju/ratelimit"
 )
 
-var RLBucket = ratelimit.NewBucketWithRate(10*1024, 20*1024)
+var RLBucket = ratelimit.NewBucketWithRate(1000*1024, 1024*1024)
 
 func RateLimitReader(isDedicatedGateway bool, r io.Reader) io.Reader {
 	if isDedicatedGateway {
