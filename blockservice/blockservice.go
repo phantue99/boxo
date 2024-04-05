@@ -632,8 +632,9 @@ func getBlock(ctx context.Context, c cid.Cid, bs blockstore.Blockstore, allowlis
 			return nil, err
 		}
 		hash := c.Hash().HexString()
-		if isDedicatedGateway {
-			addBandwidthUsage(f.Size, hash)
+
+		if err := addBandwidthUsage(isDedicatedGateway, f.Size, hash); err != nil {
+			fmt.Printf("Failed to add bandwidth usage: %v", err)
 		}
 
 		return blocks.NewBlockWithCid(bdata, c)
@@ -671,11 +672,12 @@ func getBlock(ctx context.Context, c cid.Cid, bs blockstore.Blockstore, allowlis
 	logger.Debug("BlockService GetBlock: Not found")
 	return nil, err
 }
-func addBandwidthUsage(fileSize uint64, hash string) error {
+func addBandwidthUsage(isPrivate bool, fileSize uint64, hash string) error {
 	apiUrl := fmt.Sprintf("%s/api/hourlyUsage/bandwidth/", pinningService)
 	reqBody, _ := json.Marshal(map[string]interface{}{
-		"amount": fileSize,
-		"cid":    hash,
+		"is_private": isPrivate,
+		"amount":     fileSize,
+		"cid":        hash,
 	})
 	client := &http.Client{}
 	req, _ := http.NewRequest("POST", apiUrl, bytes.NewBuffer(reqBody))
@@ -825,8 +827,9 @@ func getBlockCdn(ctx context.Context, c cid.Cid) (blocks.Block, error) {
 			return nil, err
 		}
 		hash := c.Hash().HexString()
-		if isDedicatedGateway {
-			addBandwidthUsage(f.Size, hash)
+
+		if err := addBandwidthUsage(isDedicatedGateway, f.Size, hash); err != nil {
+			fmt.Printf("Failed to add bandwidth usage: %v", err)
 		}
 
 		bdata, err := io.ReadAll(resp.Body)
