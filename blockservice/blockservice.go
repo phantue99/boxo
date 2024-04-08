@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -365,11 +366,17 @@ func uploadFiles(blks []blocks.Block, userID string) (string, []File, uint64, er
 	}
 	req.Header.Add("Content-Type", writer.FormDataContentType())
 	client := &http.Client{}
+
+	start := time.Now()
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", nil, 0, fmt.Errorf("failed to post raw data: %w", err)
 	}
 	defer resp.Body.Close()
+
+	responseTime := time.Since(start)
+	log.Printf("API uploadFiles response time: %v", responseTime)
 	type FileRecord struct {
 		ID       string `json:"ID"`
 		Owner    string `json:"owner"`
@@ -435,11 +442,23 @@ func appendFiles(blks []blocks.Block, fileRecordId string, userID string) ([]Fil
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	// Send request and handle response
 	client := &http.Client{}
+
+    // Create a context that will be cancelled after 1 second
+    ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+    defer cancel()
+
+	start := time.Now()
+	
+    req = req.WithContext(ctx)
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to send HTTP request: %w", err)
 	}
 	defer resp.Body.Close()
+
+	responseTime := time.Since(start)
+	log.Printf("API appendFiles response time: %v", responseTime)
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, 0, fmt.Errorf("server returned status %d, reqURI: %s, file record id: %s", resp.StatusCode, req.URL.String(), fileRecordId)
