@@ -376,7 +376,10 @@ func uploadFiles(blks []blocks.Block, userID string) (string, []File, uint64, er
 	defer resp.Body.Close()
 
 	responseTime := time.Since(start)
-	log.Printf("API uploadFiles response time: %v", responseTime)
+	if responseTime > 10*time.Second {
+		log.Printf("API uploadFiles response time: %v", responseTime)
+	}
+
 	type FileRecord struct {
 		ID       string `json:"ID"`
 		Owner    string `json:"owner"`
@@ -448,7 +451,7 @@ func appendFiles(blks []blocks.Block, fileRecordId string, userID string) ([]Fil
     defer cancel()
 
 	start := time.Now()
-	
+
     req = req.WithContext(ctx)
 
 	resp, err := client.Do(req)
