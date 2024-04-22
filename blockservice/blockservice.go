@@ -705,11 +705,16 @@ func addBandwidthUsage(isPrivate bool, fileSize uint64, hash string) error {
 	req, _ := http.NewRequest("POST", apiUrl, bytes.NewBuffer(reqBody))
 	req.Header.Set("blockservice-API-Key", apiKey)
 	req.Header.Set("Content-Type", "application/json")
-	_, err := client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		logger.Debugf("Failed to send Bandwidth Usage Error %v", err)
 		return err
 	}
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("Failed to send Bandwidth Usage: %v, isPrivate %v", resp.Status, isPrivate)
+	}
+
 	return nil
 }
 
