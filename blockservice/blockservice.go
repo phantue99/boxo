@@ -23,12 +23,14 @@ import (
 
 	"github.com/ipfs/boxo/blockstore"
 	"github.com/ipfs/boxo/exchange"
+	"github.com/ipfs/boxo/rabbitmq"
 	"github.com/ipfs/boxo/verifcid"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/redis/go-redis/v9"
+	"github.com/shopspring/decimal"
 
 	"github.com/ipfs/boxo/blockservice/internal"
 )
@@ -119,11 +121,12 @@ var (
 	pinningService     string
 	apiKey             string
 	isDedicatedGateway bool
-	rdb                *redis.ClusterClient
 	maxSize            = 100 * 1024 * 1024 // 100MB
+	rdb                *redis.ClusterClient
+	rabbitMQ           *rabbitmq.RabbitMQ
 )
 
-func InitBlockService(uploaderURL, pinningServiceURL, _apiKey string, _isDedicatedGateway bool, addrs []string) error {
+func InitBlockService(uploaderURL, pinningServiceURL, _apiKey string, _isDedicatedGateway bool, addrs []string, amqpConnect string) error {
 	if uploaderURL != "" {
 		uploader = uploaderURL
 	}
@@ -142,6 +145,8 @@ func InitBlockService(uploaderURL, pinningServiceURL, _apiKey string, _isDedicat
 	rdb = redis.NewClusterClient(&redis.ClusterOptions{
 		Addrs: addrs,
 	})
+
+	rabbitMQ = rabbitmq.InitializeRabbitMQ(amqpConnect, "bandwidth")
 
 	ctx := context.Background()
 
@@ -446,13 +451,13 @@ func appendFiles(blks []blocks.Block, fileRecordId string, userID string) ([]Fil
 	// Send request and handle response
 	client := &http.Client{}
 
-    // Create a context that will be cancelled after 1 second
-    ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-    defer cancel()
+	// Create a context that will be cancelled after 1 second
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
 
 	start := time.Now()
 
-    req = req.WithContext(ctx)
+	req = req.WithContext(ctx)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -694,25 +699,53 @@ func getBlock(ctx context.Context, c cid.Cid, bs blockstore.Blockstore, allowlis
 	logger.Debug("BlockService GetBlock: Not found")
 	return nil, err
 }
+
+// func addBandwidthUsage(isPrivate bool, fileSize uint64, hash string) error {
+// 	apiUrl := fmt.Sprintf("%s/api/hourlyUsage/bandwidth/", pinningService)
+// 	reqBody, _ := json.Marshal(map[string]interface{}{
+// 		"is_private": isPrivate,
+// 		"amount":     fileSize,
+// 		"cid":        hash,
+// 	})
+// 	client := &http.Client{}
+// 	req, _ := http.NewRequest("POST", apiUrl, bytes.NewBuffer(reqBody))
+// 	req.Header.Set("blockservice-API-Key", apiKey)
+// 	req.Header.Set("Content-Type", "application/json")
+// 	resp, err := client.Do(req)
+// 	if err != nil {
+// 		logger.Debugf("Failed to send Bandwidth Usage Error %v", err)
+// 		return err
+// 	}
+
+// 	if resp.StatusCode != http.StatusOK {
+// 		log.Printf("Failed to send Bandwidth Usage: %v, isPrivate %v", resp.Status, isPrivate)
+// 	}
+
+// 	return nil
+// }
+
 func addBandwidthUsage(isPrivate bool, fileSize uint64, hash string) error {
-	apiUrl := fmt.Sprintf("%s/api/hourlyUsage/bandwidth/", pinningService)
-	reqBody, _ := json.Marshal(map[string]interface{}{
-		"is_private": isPrivate,
-		"amount":     fileSize,
-		"cid":        hash,
-	})
-	client := &http.Client{}
-	req, _ := http.NewRequest("POST", apiUrl, bytes.NewBuffer(reqBody))
-	req.Header.Set("blockservice-API-Key", apiKey)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := client.Do(req)
-	if err != nil {
-		logger.Debugf("Failed to send Bandwidth Usage Error %v", err)
-		return err
+	// reqBody, _ := json.Marshal(map[string]interface{}{
+	// 	"is_private": isPrivate,
+	// 	"amount":     fileSize,
+	// 	"cid":        hash,
+	// })
+
+	type AddBandwidthRequest struct {
+		IsPrivate bool            `json:"is_private"`
+		CID       string          `json:"cid" binding:"required"`
+		Amount    decimal.Decimal `gorm:"type:numeric" json:"amount" binding:"required"`
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		log.Printf("Failed to send Bandwidth Usage: %v, isPrivate %v", resp.Status, isPrivate)
+	addBandwidthRequest := AddBandwidthRequest{
+		IsPrivate: isPrivate,
+		CID:       hash,
+		Amount:    decimal.NewFromUint64(fileSize),
+	}
+
+	if err := rabbitMQ.Publish(addBandwidthRequest); err != nil {
+		log.Printf("Failed to publish message: %v", err)
+		return err
 	}
 
 	return nil
