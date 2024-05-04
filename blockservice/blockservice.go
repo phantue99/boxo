@@ -119,27 +119,23 @@ type File struct {
 var (
 	uploader           string
 	pinningService     string
-	apiKey             string
 	isDedicatedGateway bool
 	maxSize            = 100 * 1024 * 1024 // 100MB
 	rdb                *redis.ClusterClient
 	rabbitMQ           *rabbitmq.RabbitMQ
 )
 
-func InitBlockService(uploaderURL, pinningServiceURL, _apiKey string, _isDedicatedGateway bool, addrs []string, amqpConnect string) error {
+func InitBlockService(uploaderURL, pinningServiceURL string, _isDedicatedGateway bool, addrs []string, amqpConnect string) error {
 	if uploaderURL != "" {
 		uploader = uploaderURL
 	}
 	if pinningServiceURL != "" {
 		pinningService = pinningServiceURL
 	}
-	if _apiKey != "" {
-		apiKey = _apiKey
-	}
 	isDedicatedGateway = _isDedicatedGateway
 
 	// Return an error if any of the URLs is empty.
-	if uploader == "" || pinningService == "" || apiKey == "" {
+	if uploader == "" || pinningService == ""  {
 		return errors.New("error: empty url or api key")
 	}
 	rdb = redis.NewClusterClient(&redis.ClusterOptions{
