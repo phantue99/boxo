@@ -135,7 +135,7 @@ func InitBlockService(uploaderURL, pinningServiceURL string, _isDedicatedGateway
 	isDedicatedGateway = _isDedicatedGateway
 
 	// Return an error if any of the URLs is empty.
-	if uploader == "" || pinningService == ""  {
+	if uploader == "" || pinningService == "" {
 		return errors.New("error: empty url or api key")
 	}
 	rdb = redis.NewClusterClient(&redis.ClusterOptions{
@@ -661,6 +661,8 @@ func getBlock(ctx context.Context, c cid.Cid, bs blockstore.Blockstore, allowlis
 		}
 
 		return blocks.NewBlockWithCid(bdata, c)
+	} else {
+		fmt.Printf("Hash not found %s, Failed to get data %v \n", c.Hash().HexString(), err)
 	}
 
 	if ipld.IsNotFound(err) && fget != nil || err != nil {

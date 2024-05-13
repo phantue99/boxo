@@ -150,6 +150,8 @@ require (
 	github.com/quic-go/webtransport-go v0.5.3 // indirect
 	github.com/raulk/go-watchdog v1.3.0 // indirect
 	github.com/redis/go-redis/v9 v9.2.1
+	github.com/shopspring/decimal v1.4.0
+	github.com/streadway/amqp v1.1.0
 	github.com/stretchr/objx v0.5.0 // indirect
 	github.com/ucarion/urlpath v0.0.0-20200424170820-7ccc79b76bbb // indirect
 	github.com/whyrusleeping/cbor v0.0.0-20171005072247-63513f603b11 // indirect
