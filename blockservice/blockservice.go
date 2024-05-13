@@ -805,56 +805,56 @@ func getBlocks(ctx context.Context, ks []cid.Cid, bs blockstore.Blockstore, allo
 			}
 		}
 
-		if len(misses) == 0 || fget == nil {
-			return
-		}
+		// if len(misses) == 0 || fget == nil {
+		// 	return
+		// }
 
-		f := fget() // don't load exchange unless we have to
-		rblocks, err := f.GetBlocks(ctx, misses)
-		if err != nil {
-			logger.Debugf("Error with GetBlocks: %s", err)
-			return
-		}
+		// f := fget() // don't load exchange unless we have to
+		// rblocks, err := f.GetBlocks(ctx, misses)
+		// if err != nil {
+		// 	logger.Debugf("Error with GetBlocks: %s", err)
+		// 	return
+		// }
 
-		var cache [1]blocks.Block // preallocate once for all iterations
-		for {
-			var b blocks.Block
-			select {
-			case v, ok := <-rblocks:
-				if !ok {
-					return
-				}
-				b = v
-			case <-ctx.Done():
-				return
-			}
+		// var cache [1]blocks.Block // preallocate once for all iterations
+		// for {
+		// 	var b blocks.Block
+		// 	select {
+		// 	case v, ok := <-rblocks:
+		// 		if !ok {
+		// 			return
+		// 		}
+		// 		b = v
+		// 	case <-ctx.Done():
+		// 		return
+		// 	}
 
-			c := ctx.Value("cache")
-			if c != nil && c == true {
-				// write in the blockstore for caching
-				err = bs.Put(ctx, b)
-				if err != nil {
-					logger.Errorf("could not write blocks from the network to the blockstore: %s", err)
-					return
-				}
+		// 	c := ctx.Value("cache")
+		// 	if c != nil && c == true {
+		// 		// write in the blockstore for caching
+		// 		err = bs.Put(ctx, b)
+		// 		if err != nil {
+		// 			logger.Errorf("could not write blocks from the network to the blockstore: %s", err)
+		// 			return
+		// 		}
 
-				// inform the exchange that the blocks are available
-				cache[0] = b
-				err = f.NotifyNewBlocks(ctx, cache[:]...)
-				if err != nil {
-					logger.Errorf("could not tell the exchange about new blocks: %s", err)
-					return
-				}
-				cache[0] = nil // early gc
+		// 		// inform the exchange that the blocks are available
+		// 		cache[0] = b
+		// 		err = f.NotifyNewBlocks(ctx, cache[:]...)
+		// 		if err != nil {
+		// 			logger.Errorf("could not tell the exchange about new blocks: %s", err)
+		// 			return
+		// 		}
+		// 		cache[0] = nil // early gc
 
-			}
+		// 	}
 
-			select {
-			case out <- b:
-			case <-ctx.Done():
-				return
-			}
-		}
+		// 	select {
+		// 	case out <- b:
+		// 	case <-ctx.Done():
+		// 		return
+		// 	}
+		// }
 	}()
 	return out
 }
