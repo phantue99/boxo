@@ -253,10 +253,10 @@ func getNodesFromBG(ctx context.Context, bs bserv.BlockGetter, keys []cid.Cid, d
 			select {
 			case b, ok := <-blocks:
 				if !ok {
-					if count != len(keys) {
-						out <- &format.NodeOption{Err: fmt.Errorf("failed to fetch all nodes")}
-					}
-					return
+					// if count != len(keys) {
+					continue
+					// out <- &format.NodeOption{Err: fmt.Errorf("failed to fetch all nodes")}
+					// }
 				}
 
 				nd, err := decoder.DecodeNode(ctx, b)
