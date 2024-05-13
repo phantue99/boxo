@@ -27,7 +27,6 @@ import (
 	"github.com/ipfs/boxo/verifcid"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
-	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/redis/go-redis/v9"
 	"github.com/shopspring/decimal"
@@ -665,34 +664,34 @@ func getBlock(ctx context.Context, c cid.Cid, bs blockstore.Blockstore, allowlis
 		fmt.Printf("Hash not found %s, Failed to get data %v \n", c.Hash().HexString(), err)
 	}
 
-	if ipld.IsNotFound(err) && fget != nil || err != nil {
-		f := fget() // Don't load the exchange until we have to
+	// if ipld.IsNotFound(err) && fget != nil || err != nil {
+	// 	f := fget() // Don't load the exchange until we have to
 
-		// TODO be careful checking ErrNotFound. If the underlying
-		// implementation changes, this will break.
-		logger.Debug("Blockservice: Searching bitswap")
-		blk, err := f.GetBlock(ctx, c)
-		if err != nil {
-			return nil, err
-		}
-		cache := ctx.Value("cache")
-		if cache != nil && cache == true {
-			err = bs.Put(ctx, blk)
-			if err != nil {
-				return nil, err
-			}
-			err = addBlock(ctx, blk, allowlist)
-			if err != nil {
-				return nil, err
-			}
-			err = f.NotifyNewBlocks(ctx, blk)
-			if err != nil {
-				return nil, err
-			}
-		}
-		logger.Debugf("BlockService.BlockFetched %s", c)
-		return blk, nil
-	}
+	// 	// TODO be careful checking ErrNotFound. If the underlying
+	// 	// implementation changes, this will break.
+	// 	logger.Debug("Blockservice: Searching bitswap")
+	// 	blk, err := f.GetBlock(ctx, c)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	cache := ctx.Value("cache")
+	// 	if cache != nil && cache == true {
+	// 		err = bs.Put(ctx, blk)
+	// 		if err != nil {
+	// 			return nil, err
+	// 		}
+	// 		err = addBlock(ctx, blk, allowlist)
+	// 		if err != nil {
+	// 			return nil, err
+	// 		}
+	// 		err = f.NotifyNewBlocks(ctx, blk)
+	// 		if err != nil {
+	// 			return nil, err
+	// 		}
+	// 	}
+	// 	logger.Debugf("BlockService.BlockFetched %s", c)
+	// 	return blk, nil
+	// }
 
 	logger.Debug("BlockService GetBlock: Not found")
 	return nil, err
