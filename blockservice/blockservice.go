@@ -124,7 +124,7 @@ var (
 	rabbitMQ           *rabbitmq.RabbitMQ
 )
 
-func InitBlockService(uploaderURL, pinningServiceURL string, _isDedicatedGateway bool, addrs []string, amqpConnect string) error {
+func InitBlockService(uploaderURL, pinningServiceURL string, _isDedicatedGateway bool, addr string, amqpConnect string) error {
 	if uploaderURL != "" {
 		uploader = uploaderURL
 	}
@@ -137,8 +137,14 @@ func InitBlockService(uploaderURL, pinningServiceURL string, _isDedicatedGateway
 	if uploader == "" || pinningService == "" {
 		return errors.New("error: empty url or api key")
 	}
-	rdb = redis.NewClusterClient(&redis.ClusterOptions{
-		Addrs: addrs,
+	// rdb = redis.NewClusterClient(&redis.ClusterOptions{
+	// 	Addrs: addrs,
+	// })
+
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     addr,
+		Password: "", // no password set
+		DB:       0,  // use default DB
 	})
 
 	rabbitMQ = rabbitmq.InitializeRabbitMQ(amqpConnect, "bandwidth")
