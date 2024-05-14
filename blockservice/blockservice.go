@@ -120,7 +120,7 @@ var (
 	pinningService     string
 	isDedicatedGateway bool
 	maxSize            = 100 * 1024 * 1024 // 100MB
-	rdb                *redis.ClusterClient
+	rdb                *redis.Client
 	rabbitMQ           *rabbitmq.RabbitMQ
 )
 
@@ -141,7 +141,7 @@ func InitBlockService(uploaderURL, pinningServiceURL string, _isDedicatedGateway
 	// 	Addrs: addrs,
 	// })
 
-	rdb := redis.NewClient(&redis.Options{
+	rdb = redis.NewClient(&redis.Options{
 		Addr:     addr,
 		Password: "", // no password set
 		DB:       0,  // use default DB
