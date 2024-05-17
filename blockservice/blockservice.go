@@ -103,7 +103,7 @@ type fileInfo struct {
 	Offset       uint64
 }
 
-type ZipReader struct {
+type ZipHeader struct {
 	File []File
 }
 type File struct {
@@ -395,7 +395,8 @@ func uploadFiles(blks []blocks.Block, userID string) (string, []File, uint64, er
 	}
 	type Response struct {
 		FileRecord FileRecord
-		ZipReader  ZipReader
+		ZipReader  *ZipHeader
+		ZipHeader  *ZipHeader
 	}
 	var (
 		response     Response
@@ -407,11 +408,23 @@ func uploadFiles(blks []blocks.Block, userID string) (string, []File, uint64, er
 			return "", nil, 0, fmt.Errorf("failed to decode response body: %w", err)
 		}
 		fileRecordID = response.FileRecord.ID
-		size = response.ZipReader.File[len(blks)-1].Offset + response.ZipReader.File[len(blks)-1].UncompressedSize64
+		if response.ZipHeader == nil && response.ZipReader != nil {
+			response.ZipHeader = response.ZipReader
+		}
+
+		if response.ZipHeader == nil {
+			return "", nil, 0, fmt.Errorf("ZipHeader is nil")
+		}
+
+		if len(response.ZipHeader.File) <= len(blks)-1 {
+			return "", nil, 0, fmt.Errorf("index out of range")
+		}
+
+		size = response.ZipHeader.File[len(blks)-1].Offset + response.ZipHeader.File[len(blks)-1].UncompressedSize64
 	} else {
 		return "", nil, 0, fmt.Errorf("server returned status %d", resp.StatusCode)
 	}
-	return fileRecordID, response.ZipReader.File, size, nil
+	return fileRecordID, response.ZipHeader.File, size, nil
 }
 
 func appendFiles(blks []blocks.Block, fileRecordId string, userID string) ([]File, uint64, error) {
@@ -474,7 +487,7 @@ func appendFiles(blks []blocks.Block, fileRecordId string, userID string) ([]Fil
 	}
 
 	var (
-		response      ZipReader
+		response      ZipHeader
 		lastFileIndex int
 		lastSize      uint64
 	)
