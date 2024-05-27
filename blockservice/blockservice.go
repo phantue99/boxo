@@ -27,6 +27,7 @@ import (
 	"github.com/ipfs/boxo/verifcid"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
+	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/redis/go-redis/v9"
 	"github.com/shopspring/decimal"
@@ -300,14 +301,14 @@ func addBlock(ctx context.Context, o blocks.Block, allowlist verifcid.Allowlist)
 	if fr.FileRecordID == "" || fr.Size > uint64(maxSize) {
 		fileRecordID, files, lastSize, err = uploadFiles([]blocks.Block{o}, userID)
 		if err != nil {
-			return fmt.Errorf("failed to upload file and get file record ID: %w", err)
+			return fmt.Errorf("[addBlock] failed to upload file and get file record ID: %w", err)
 		}
 	} else {
 		files, lastSize, err = appendFiles([]blocks.Block{o}, fileRecordID, userID)
 		if err != nil {
 			fileRecordID, files, lastSize, err = uploadFiles([]blocks.Block{o}, userID)
 			if err != nil {
-				return fmt.Errorf("failed to upload file and get file record ID: %w", err)
+				return fmt.Errorf("[addBlock] failed to upload file and get file record ID after append files fail: %w", err)
 			}
 		}
 	}
@@ -572,14 +573,14 @@ func addBlocks(ctx context.Context, bs []blocks.Block, allowlist verifcid.Allowl
 	if fr.FileRecordID == "" || fr.Size > uint64(maxSize) {
 		fileRecordID, files, lastSize, err = uploadFiles(toput, userID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to upload file and get file record ID: %w", err)
+			return nil, fmt.Errorf("[addBlocks] failed to upload file and get file record ID: %w", err)
 		}
 	} else {
 		files, lastSize, err = appendFiles(toput, fileRecordID, userID)
 		if err != nil {
 			fileRecordID, files, lastSize, err = uploadFiles(toput, userID)
 			if err != nil {
-				return nil, fmt.Errorf("failed to upload file and get file record ID: %w", err)
+				return nil, fmt.Errorf("[addBlocks] failed to upload file and get file record ID after append files fail: %w", err)
 			}
 		}
 	}
@@ -683,34 +684,22 @@ func getBlock(ctx context.Context, c cid.Cid, bs blockstore.Blockstore, allowlis
 		fmt.Printf("Hash not found %s, Failed to get data %v \n", c.Hash().HexString(), err)
 	}
 
-	// if ipld.IsNotFound(err) && fget != nil || err != nil {
-	// 	f := fget() // Don't load the exchange until we have to
+	if ipld.IsNotFound(err) && fget != nil || err != nil {
+		f := fget() // Don't load the exchange until we have to
 
-	// 	// TODO be careful checking ErrNotFound. If the underlying
-	// 	// implementation changes, this will break.
-	// 	logger.Debug("Blockservice: Searching bitswap")
-	// 	blk, err := f.GetBlock(ctx, c)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// 	cache := ctx.Value("cache")
-	// 	if cache != nil && cache == true {
-	// 		err = bs.Put(ctx, blk)
-	// 		if err != nil {
-	// 			return nil, err
-	// 		}
-	// 		err = addBlock(ctx, blk, allowlist)
-	// 		if err != nil {
-	// 			return nil, err
-	// 		}
-	// 		err = f.NotifyNewBlocks(ctx, blk)
-	// 		if err != nil {
-	// 			return nil, err
-	// 		}
-	// 	}
-	// 	logger.Debugf("BlockService.BlockFetched %s", c)
-	// 	return blk, nil
-	// }
+		// TODO be careful checking ErrNotFound. If the underlying
+		// implementation changes, this will break.
+		logger.Debug("Blockservice: Searching bitswap")
+		blk, err := f.GetBlock(ctx, c)
+		if err != nil {
+			return nil, err
+		}
+		if err := addBlock(ctx, blk, allowlist); err != nil {
+			return nil, err
+		}
+		logger.Debugf("BlockService.BlockFetched %s", c)
+		return blk, nil
+	}
 
 	logger.Debug("BlockService GetBlock: Not found")
 	return nil, err
@@ -824,56 +813,39 @@ func getBlocks(ctx context.Context, ks []cid.Cid, bs blockstore.Blockstore, allo
 			}
 		}
 
-		// if len(misses) == 0 || fget == nil {
-		// 	return
-		// }
+		if len(misses) == 0 || fget == nil {
+			return
+		}
 
-		// f := fget() // don't load exchange unless we have to
-		// rblocks, err := f.GetBlocks(ctx, misses)
-		// if err != nil {
-		// 	logger.Debugf("Error with GetBlocks: %s", err)
-		// 	return
-		// }
+		f := fget() // don't load exchange unless we have to
+		rblocks, err := f.GetBlocks(ctx, misses)
+		if err != nil {
+			logger.Debugf("Error with GetBlocks: %s", err)
+			return
+		}
 
-		// var cache [1]blocks.Block // preallocate once for all iterations
-		// for {
-		// 	var b blocks.Block
-		// 	select {
-		// 	case v, ok := <-rblocks:
-		// 		if !ok {
-		// 			return
-		// 		}
-		// 		b = v
-		// 	case <-ctx.Done():
-		// 		return
-		// 	}
+		for {
+			var b blocks.Block
+			select {
+			case v, ok := <-rblocks:
+				if !ok {
+					return
+				}
+				b = v
+			case <-ctx.Done():
+				return
+			}
 
-		// 	c := ctx.Value("cache")
-		// 	if c != nil && c == true {
-		// 		// write in the blockstore for caching
-		// 		err = bs.Put(ctx, b)
-		// 		if err != nil {
-		// 			logger.Errorf("could not write blocks from the network to the blockstore: %s", err)
-		// 			return
-		// 		}
+			if err := addBlock(ctx, b, allowlist); err != nil {
+				return
+			}
 
-		// 		// inform the exchange that the blocks are available
-		// 		cache[0] = b
-		// 		err = f.NotifyNewBlocks(ctx, cache[:]...)
-		// 		if err != nil {
-		// 			logger.Errorf("could not tell the exchange about new blocks: %s", err)
-		// 			return
-		// 		}
-		// 		cache[0] = nil // early gc
-
-		// 	}
-
-		// 	select {
-		// 	case out <- b:
-		// 	case <-ctx.Done():
-		// 		return
-		// 	}
-		// }
+			select {
+			case out <- b:
+			case <-ctx.Done():
+				return
+			}
+		}
 	}()
 	return out
 }
