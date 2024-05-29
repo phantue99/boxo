@@ -287,17 +287,25 @@ func addBlock(ctx context.Context, o blocks.Block, allowlist verifcid.Allowlist)
 	if err := verifcid.ValidateCid(allowlist, c); err != nil {
 		return err
 	}
-
-	if err := rdb.Get(ctx, hash).Err(); err == nil {
-		return nil
-	}
-
 	var (
 		fileRecordID = fr.FileRecordID
 		lastSize     uint64
 		files        []File
 		err          error
+		data         []byte
 	)
+
+	data, err = rdb.Get(ctx, hash).Bytes()
+	if err == nil {
+		var f fileInfo
+
+		if err := json.Unmarshal(data, &f); err != nil {
+			return nil
+		}
+	} else if err != redis.Nil {
+		return err
+	}
+	
 	if fr.FileRecordID == "" || fr.Size > uint64(maxSize) {
 		fileRecordID, files, lastSize, err = uploadFiles([]blocks.Block{o}, userID)
 		if err != nil {
