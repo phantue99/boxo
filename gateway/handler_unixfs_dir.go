@@ -2,21 +2,21 @@ package gateway
 
 import (
 	"context"
+	"encoding/gob"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
+	"os"
 	gopath "path"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/dustin/go-humanize"
-	"github.com/ipfs/boxo/files"
 	"github.com/ipfs/boxo/gateway/assets"
 	"github.com/ipfs/boxo/path"
 	cid "github.com/ipfs/go-cid"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
@@ -24,8 +24,8 @@ import (
 //
 // It will return index.html if present, or generate directory listing otherwise.
 func (i *handler) serveDirectory(ctx context.Context, w http.ResponseWriter, r *http.Request, resolvedPath path.ImmutablePath, contentPath path.Path, isHeadRequest bool, directoryMetadata *directoryMetadata, ranges []ByteRange, begin time.Time, logger *zap.SugaredLogger) bool {
-	ctx, span := spanTrace(ctx, "Handler.ServeDirectory", trace.WithAttributes(attribute.String("path", resolvedPath.String())))
-	defer span.End()
+	// ctx, span := spanTrace(ctx, "Handler.ServeDirectory", trace.WithAttributes(attribute.String("path", resolvedPath.String())))
+	// defer span.End()
 
 	// WithHostname might have constructed an IPNS/IPFS path using the Host header.
 	// In this case, we need the original path for constructing redirects and links
@@ -58,76 +58,76 @@ func (i *handler) serveDirectory(ctx context.Context, w http.ResponseWriter, r *
 		}
 	}
 
-	// Check if directory has index.html, if so, serveFile
-	idxPath, err := path.Join(contentPath, "index.html")
-	if err != nil {
-		i.webError(w, r, err, http.StatusInternalServerError)
-		return false
-	}
+	// // Check if directory has index.html, if so, serveFile
+	// idxPath, err := path.Join(contentPath, "index.html")
+	// if err != nil {
+	// 	i.webError(w, r, err, http.StatusInternalServerError)
+	// 	return false
+	// }
 
-	indexPath, err := path.Join(resolvedPath, "index.html")
-	if err != nil {
-		i.webError(w, r, err, http.StatusInternalServerError)
-		return false
-	}
+	// indexPath, err := path.Join(resolvedPath, "index.html")
+	// if err != nil {
+	// 	i.webError(w, r, err, http.StatusInternalServerError)
+	// 	return false
+	// }
 
-	imIndexPath, err := path.NewImmutablePath(indexPath)
-	if err != nil {
-		i.webError(w, r, err, http.StatusInternalServerError)
-		return false
-	}
+	// imIndexPath, err := path.NewImmutablePath(indexPath)
+	// if err != nil {
+	// 	i.webError(w, r, err, http.StatusInternalServerError)
+	// 	return false
+	// }
 
 	// TODO: could/should this all be skipped to have HEAD requests just return html content type and save the complexity? If so can we skip the above code as well?
-	var idxFileBytes io.ReadCloser
-	var idxFileSize int64
-	var returnRangeStartsAtZero bool
-	if isHeadRequest {
-		var idxHeadResp *HeadResponse
-		_, idxHeadResp, err = i.backend.Head(ctx, imIndexPath)
-		if err == nil {
-			defer idxHeadResp.Close()
-			if !idxHeadResp.isFile {
-				i.webError(w, r, fmt.Errorf("%q could not be read: %w", imIndexPath, files.ErrNotReader), http.StatusUnprocessableEntity)
-				return false
-			}
-			returnRangeStartsAtZero = true
-			idxFileBytes = idxHeadResp.startingBytes
-			idxFileSize = idxHeadResp.bytesSize
-		}
-	} else {
-		var idxGetResp *GetResponse
-		_, idxGetResp, err = i.backend.Get(ctx, imIndexPath, ranges...)
-		if err == nil {
-			defer idxGetResp.Close()
-			if idxGetResp.bytes == nil {
-				i.webError(w, r, fmt.Errorf("%q could not be read: %w", imIndexPath, files.ErrNotReader), http.StatusUnprocessableEntity)
-				return false
-			}
-			if len(ranges) > 0 {
-				ra := ranges[0]
-				returnRangeStartsAtZero = ra.From == 0
-			}
-			idxFileBytes = idxGetResp.bytes
-			idxFileSize = idxGetResp.bytesSize
-		}
-	}
+	// var idxFileBytes io.ReadCloser
+	// var idxFileSize int64
+	// var returnRangeStartsAtZero bool
+	// if isHeadRequest {
+	// 	var idxHeadResp *HeadResponse
+	// 	_, idxHeadResp, err = i.backend.Head(ctx, imIndexPath)
+	// 	if err == nil {
+	// 		defer idxHeadResp.Close()
+	// 		if !idxHeadResp.isFile {
+	// 			i.webError(w, r, fmt.Errorf("%q could not be read: %w", imIndexPath, files.ErrNotReader), http.StatusUnprocessableEntity)
+	// 			return false
+	// 		}
+	// 		returnRangeStartsAtZero = true
+	// 		idxFileBytes = idxHeadResp.startingBytes
+	// 		idxFileSize = idxHeadResp.bytesSize
+	// 	}
+	// } else {
+	// 	var idxGetResp *GetResponse
+	// 	_, idxGetResp, err = i.backend.Get(ctx, imIndexPath, ranges...)
+	// 	if err == nil {
+	// 		defer idxGetResp.Close()
+	// 		if idxGetResp.bytes == nil {
+	// 			i.webError(w, r, fmt.Errorf("%q could not be read: %w", imIndexPath, files.ErrNotReader), http.StatusUnprocessableEntity)
+	// 			return false
+	// 		}
+	// 		if len(ranges) > 0 {
+	// 			ra := ranges[0]
+	// 			returnRangeStartsAtZero = ra.From == 0
+	// 		}
+	// 		idxFileBytes = idxGetResp.bytes
+	// 		idxFileSize = idxGetResp.bytesSize
+	// 	}
+	// }
 
-	if err == nil {
-		logger.Debugw("serving index.html file", "path", idxPath)
-		// write to request
-		success := i.serveFile(ctx, w, r, resolvedPath, idxPath, idxFileSize, idxFileBytes, false, returnRangeStartsAtZero, "text/html", begin)
-		if success {
-			i.unixfsDirIndexGetMetric.WithLabelValues(contentPath.Namespace()).Observe(time.Since(begin).Seconds())
-		}
-		return success
-	}
+	// if err == nil {
+	// 	logger.Debugw("serving index.html file", "path", idxPath)
+	// 	// write to request
+	// 	success := i.serveFile(ctx, w, r, resolvedPath, idxPath, idxFileSize, idxFileBytes, false, returnRangeStartsAtZero, "text/html", begin)
+	// 	if success {
+	// 		i.unixfsDirIndexGetMetric.WithLabelValues(contentPath.Namespace()).Observe(time.Since(begin).Seconds())
+	// 	}
+	// 	return success
+	// }
 
-	if isErrNotFound(err) {
-		logger.Debugw("no index.html; noop", "path", idxPath)
-	} else if err != nil {
-		i.webError(w, r, err, http.StatusInternalServerError)
-		return false
-	}
+	// if isErrNotFound(err) {
+	// 	logger.Debugw("no index.html; noop", "path", idxPath)
+	// } else if err != nil {
+	// 	i.webError(w, r, err, http.StatusInternalServerError)
+	// 	return false
+	// }
 
 	// A HTML directory index will be presented, be sure to set the correct
 	// type instead of relying on autodetection (which may fail).
@@ -143,25 +143,71 @@ func (i *handler) serveDirectory(ctx context.Context, w http.ResponseWriter, r *
 	}
 
 	var dirListing []assets.DirectoryItem
-	for l := range directoryMetadata.entries {
-		if l.Err != nil {
-			i.webError(w, r, l.Err, http.StatusInternalServerError)
-			return false
-		}
+	errorCount := 0
+	fileName := `DirCacheMetadata-` + `CID-` + resolvedPath.RootCid().String()
+	dirCacheMetadata := filepath.Join("public", "DirCacheMetadata", fileName)
 
-		name := l.Link.Name
-		sz := l.Link.Size
-		linkCid := l.Link.Cid
-
-		hash := linkCid.String()
-		di := assets.DirectoryItem{
-			Size:      humanize.Bytes(sz),
-			Name:      name,
-			Path:      gopath.Join(originalURLPath, name),
-			Hash:      hash,
-			ShortHash: assets.ShortHash(hash),
+	if _, err := os.Stat(dirCacheMetadata); err == nil {
+		// File exists, load dirListing from the file
+		file, err := os.Open(dirCacheMetadata)
+		if err != nil {
+			fmt.Println("Error opening file: ", err)
+		} else {
+			dec := gob.NewDecoder(file)
+			err = dec.Decode(&dirListing)
+			if err != nil {
+				fmt.Println("Error decoding dirListing: ", err)
+			}
+			file.Close()
 		}
-		dirListing = append(dirListing, di)
+	} else if os.IsNotExist(err) {
+		// File does not exist, create dirListing
+		for l := range directoryMetadata.entries {
+			if l.Err != nil {
+				errorCount++
+				if errorCount > len(dirListing)/1000 {
+					i.webError(w, r, l.Err, http.StatusInternalServerError)
+					return false
+				}
+				continue
+			}
+
+			name := l.Link.Name
+			sz := l.Link.Size
+			linkCid := l.Link.Cid
+
+			hash := linkCid.String()
+			di := assets.DirectoryItem{
+				Size:      humanize.Bytes(sz),
+				Name:      name,
+				Path:      gopath.Join(originalURLPath, name),
+				Hash:      hash,
+				ShortHash: assets.ShortHash(hash),
+			}
+			dirListing = append(dirListing, di)
+		}
+		startTime := time.Now()
+		sort.Slice(dirListing, func(i, j int) bool {
+			return dirListing[i].Name < dirListing[j].Name
+		})
+
+		fmt.Println("Sorted dirListing duration: ", time.Since(startTime))
+
+		// If there were no errors and dirListing is large, save it to a file
+		if errorCount == 0 && len(dirListing) > 1000 {
+			fmt.Println("Saving dirListing to file")
+			file, err := os.Create(dirCacheMetadata)
+			if err != nil {
+				fmt.Println("Error creating file: ", err)
+			} else {
+				enc := gob.NewEncoder(file)
+				err = enc.Encode(dirListing)
+				if err != nil {
+					fmt.Println("Error encoding dirListing: ", err)
+				}
+				file.Close()
+			}
+		}
 	}
 
 	// construct the correct back link
