@@ -145,7 +145,12 @@ func (i *handler) serveDirectory(ctx context.Context, w http.ResponseWriter, r *
 	var dirListing []assets.DirectoryItem
 	errorCount := 0
 	fileName := `DirCacheMetadata-` + `CID-` + resolvedPath.RootCid().String()
-	dirCacheMetadata := filepath.Join("public", "DirCacheMetadata", fileName)
+	fileDir := filepath.Join("public", "DirCacheMetadata")
+
+	if err := os.MkdirAll(fileDir, os.ModePerm); err != nil {
+		fmt.Println("Error creating directory: ", err)
+	}
+	dirCacheMetadata := filepath.Join(fileDir, fileName)
 
 	if _, err := os.Stat(dirCacheMetadata); err == nil {
 		// File exists, load dirListing from the file
