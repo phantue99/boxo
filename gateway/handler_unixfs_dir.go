@@ -199,7 +199,7 @@ func (i *handler) serveDirectory(ctx context.Context, w http.ResponseWriter, r *
 		fmt.Println("Sorted dirListing duration: ", time.Since(startTime))
 
 		// If there were no errors and dirListing is large, save it to a file
-		if errorCount == 0 && len(dirListing) > 1000 {
+		if errorCount == 0 && len(dirListing) > 200 {
 			fmt.Println("Saving dirListing to file")
 			file, err := os.Create(dirCacheMetadata)
 			if err != nil {
