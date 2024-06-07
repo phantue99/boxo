@@ -23,7 +23,7 @@ import (
 // serveDirectory returns the best representation of UnixFS directory
 //
 // It will return index.html if present, or generate directory listing otherwise.
-func (i *handler) serveDirectory(ctx context.Context, w http.ResponseWriter, r *http.Request, resolvedPath path.ImmutablePath, contentPath path.Path, isHeadRequest bool, directoryMetadata *directoryMetadata, ranges []ByteRange, begin time.Time, logger *zap.SugaredLogger) bool {
+func (i *handler) serveDirectory(ctx context.Context, w http.ResponseWriter, r *http.Request, resolvedPath path.ImmutablePath, contentPath path.Path, isHeadRequest bool, dirMetadata *directoryMetadata, ranges []ByteRange, begin time.Time, logger *zap.SugaredLogger) bool {
 	// ctx, span := spanTrace(ctx, "Handler.ServeDirectory", trace.WithAttributes(attribute.String("path", resolvedPath.String())))
 	// defer span.End()
 
@@ -178,10 +178,19 @@ func (i *handler) serveDirectory(ctx context.Context, w http.ResponseWriter, r *
 
 	} else if os.IsNotExist(err) {
 		// File does not exist, create dirListing
-		for l := range directoryMetadata.entries {
+		for l := range dirMetadata.entries {
 			if l.Err != nil {
 				errorCount++
 				if errorCount > len(dirListing)/1000 {
+					go func(dirMetadata *directoryMetadata) {
+						for i := 0; i < 5; i++ {
+							if err := CacheMetadata(dirMetadata, resolvedPath, originalURLPath); err != nil {
+								fmt.Println("Error caching metadata: ", err)
+								continue
+							}
+							return
+						}
+					}(dirMetadata)
 					i.webError(w, r, l.Err, http.StatusInternalServerError)
 					return false
 				}
@@ -223,15 +232,15 @@ func (i *handler) serveDirectory(ctx context.Context, w http.ResponseWriter, r *
 		}
 
 		if errorCount > 0 && len(dirListing) > 200 {
-			go func() {
+			go func(dirMetadata *directoryMetadata) {
 				for i := 0; i < 5; i++ {
-					if err := CacheMetadata(directoryMetadata, resolvedPath, originalURLPath); err != nil {
+					if err := CacheMetadata(dirMetadata, resolvedPath, originalURLPath); err != nil {
 						fmt.Println("Error caching metadata: ", err)
 						continue
 					}
 					return
 				}
-			}()
+			}(dirMetadata)
 		}
 	}
 
@@ -259,7 +268,7 @@ func (i *handler) serveDirectory(ctx context.Context, w http.ResponseWriter, r *
 		}
 	}
 
-	size := humanize.Bytes(directoryMetadata.dagSize)
+	size := humanize.Bytes(dirMetadata.dagSize)
 	hash := resolvedPath.RootCid().String()
 	globalData := i.getTemplateGlobalData(r, contentPath)
 
@@ -291,7 +300,7 @@ func getDirListingEtag(dirCid cid.Cid) string {
 	return `"DirIndex-` + assets.AssetHash + `_CID-` + dirCid.String() + `"`
 }
 
-func CacheMetadata(directoryMetadata *directoryMetadata, resolvedPath path.ImmutablePath, originalURLPath string) error {
+func CacheMetadata(dirMetadata *directoryMetadata, resolvedPath path.ImmutablePath, originalURLPath string) error {
 	var dirListing []assets.DirectoryItem
 	fileName := `DirCacheMetadata-` + `CID-` + resolvedPath.RootCid().String()
 	fileDir := filepath.Join("public", "DirCacheMetadata")
@@ -323,7 +332,7 @@ func CacheMetadata(directoryMetadata *directoryMetadata, resolvedPath path.Immut
 		return nil
 
 	} else if os.IsNotExist(err) {
-		for l := range directoryMetadata.entries {
+		for l := range dirMetadata.entries {
 			if l.Err != nil {
 				return l.Err
 			}
