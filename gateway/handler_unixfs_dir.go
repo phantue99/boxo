@@ -157,14 +157,25 @@ func (i *handler) serveDirectory(ctx context.Context, w http.ResponseWriter, r *
 		file, err := os.Open(dirCacheMetadata)
 		if err != nil {
 			fmt.Println("Error opening file: ", err)
-		} else {
-			dec := gob.NewDecoder(file)
-			err = dec.Decode(&dirListing)
-			if err != nil {
-				fmt.Println("Error decoding dirListing: ", err)
-			}
-			file.Close()
+			return false
 		}
+		defer file.Close()
+
+		dec := gob.NewDecoder(file)
+		if err = dec.Decode(&dirListing); err != nil {
+			fmt.Println("Error decoding dirListing: ", err)
+			// If there was an error decoding the file, delete it and create a new dirListing
+			if err := os.Remove(dirCacheMetadata); err != nil {
+				fmt.Println("Error removing file: ", err)
+				return false
+			}
+			return false
+		}
+
+		for i, l := range dirListing {
+			dirListing[i].Path = gopath.Join(originalURLPath, l.Name)
+		}
+
 	} else if os.IsNotExist(err) {
 		// File does not exist, create dirListing
 		for l := range directoryMetadata.entries {
@@ -191,12 +202,9 @@ func (i *handler) serveDirectory(ctx context.Context, w http.ResponseWriter, r *
 			}
 			dirListing = append(dirListing, di)
 		}
-		startTime := time.Now()
 		sort.Slice(dirListing, func(i, j int) bool {
 			return dirListing[i].Name < dirListing[j].Name
 		})
-
-		fmt.Println("Sorted dirListing duration: ", time.Since(startTime))
 
 		// If there were no errors and dirListing is large, save it to a file
 		if errorCount == 0 && len(dirListing) > 200 {
@@ -204,14 +212,26 @@ func (i *handler) serveDirectory(ctx context.Context, w http.ResponseWriter, r *
 			file, err := os.Create(dirCacheMetadata)
 			if err != nil {
 				fmt.Println("Error creating file: ", err)
-			} else {
-				enc := gob.NewEncoder(file)
-				err = enc.Encode(dirListing)
-				if err != nil {
-					fmt.Println("Error encoding dirListing: ", err)
-				}
-				file.Close()
+				return false
 			}
+			defer file.Close()
+
+			enc := gob.NewEncoder(file)
+			if err = enc.Encode(dirListing); err != nil {
+				fmt.Println("Error encoding dirListing: ", err)
+			}
+		}
+
+		if errorCount > 0 && len(dirListing) > 200 {
+			go func() {
+				for i := 0; i < 5; i++ {
+					if err := CacheMetadata(directoryMetadata, resolvedPath, originalURLPath); err != nil {
+						fmt.Println("Error caching metadata: ", err)
+						continue
+					}
+					return
+				}
+			}()
 		}
 	}
 
@@ -269,4 +289,78 @@ func (i *handler) serveDirectory(ctx context.Context, w http.ResponseWriter, r *
 
 func getDirListingEtag(dirCid cid.Cid) string {
 	return `"DirIndex-` + assets.AssetHash + `_CID-` + dirCid.String() + `"`
+}
+
+func CacheMetadata(directoryMetadata *directoryMetadata, resolvedPath path.ImmutablePath, originalURLPath string) error {
+	var dirListing []assets.DirectoryItem
+	fileName := `DirCacheMetadata-` + `CID-` + resolvedPath.RootCid().String()
+	fileDir := filepath.Join("public", "DirCacheMetadata")
+
+	if err := os.MkdirAll(fileDir, os.ModePerm); err != nil {
+		fmt.Println("Error creating directory: ", err)
+	}
+	dirCacheMetadata := filepath.Join(fileDir, fileName)
+	if _, err := os.Stat(dirCacheMetadata); err == nil {
+		// File exists, load dirListing from the file
+		file, err := os.Open(dirCacheMetadata)
+		if err != nil {
+			fmt.Println("Error opening file: ", err)
+			return err
+		}
+		defer file.Close()
+
+		dec := gob.NewDecoder(file)
+		if err = dec.Decode(&dirListing); err != nil {
+			fmt.Println("Error decoding dirListing: ", err)
+			// If there was an error decoding the file, delete it and create a new dirListing
+			if err := os.Remove(dirCacheMetadata); err != nil {
+				fmt.Println("Error removing file: ", err)
+				return err
+			}
+			return err
+		}
+
+		return nil
+
+	} else if os.IsNotExist(err) {
+		for l := range directoryMetadata.entries {
+			if l.Err != nil {
+				return l.Err
+			}
+
+			name := l.Link.Name
+			sz := l.Link.Size
+			linkCid := l.Link.Cid
+
+			hash := linkCid.String()
+			di := assets.DirectoryItem{
+				Size:      humanize.Bytes(sz),
+				Name:      name,
+				Path:      gopath.Join(originalURLPath, name),
+				Hash:      hash,
+				ShortHash: assets.ShortHash(hash),
+			}
+			dirListing = append(dirListing, di)
+		}
+		sort.Slice(dirListing, func(i, j int) bool {
+			return dirListing[i].Name < dirListing[j].Name
+		})
+
+		// If there were no errors and dirListing is large, save it to a file
+		if len(dirListing) > 200 {
+			fmt.Println("Saving dirListing to file")
+			file, err := os.Create(dirCacheMetadata)
+			if err != nil {
+				fmt.Println("Error creating file: ", err)
+				return err
+			}
+			defer file.Close()
+
+			enc := gob.NewEncoder(file)
+			if err = enc.Encode(dirListing); err != nil {
+				fmt.Println("Error encoding dirListing: ", err)
+			}
+		}
+	}
+	return nil
 }
