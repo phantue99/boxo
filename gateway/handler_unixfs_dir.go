@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dustin/go-humanize"
@@ -19,6 +20,8 @@ import (
 	cid "github.com/ipfs/go-cid"
 	"go.uber.org/zap"
 )
+
+var mutexLock sync.Mutex
 
 // serveDirectory returns the best representation of UnixFS directory
 //
@@ -57,77 +60,6 @@ func (i *handler) serveDirectory(ctx context.Context, w http.ResponseWriter, r *
 			return true
 		}
 	}
-
-	// // Check if directory has index.html, if so, serveFile
-	// idxPath, err := path.Join(contentPath, "index.html")
-	// if err != nil {
-	// 	i.webError(w, r, err, http.StatusInternalServerError)
-	// 	return false
-	// }
-
-	// indexPath, err := path.Join(resolvedPath, "index.html")
-	// if err != nil {
-	// 	i.webError(w, r, err, http.StatusInternalServerError)
-	// 	return false
-	// }
-
-	// imIndexPath, err := path.NewImmutablePath(indexPath)
-	// if err != nil {
-	// 	i.webError(w, r, err, http.StatusInternalServerError)
-	// 	return false
-	// }
-
-	// TODO: could/should this all be skipped to have HEAD requests just return html content type and save the complexity? If so can we skip the above code as well?
-	// var idxFileBytes io.ReadCloser
-	// var idxFileSize int64
-	// var returnRangeStartsAtZero bool
-	// if isHeadRequest {
-	// 	var idxHeadResp *HeadResponse
-	// 	_, idxHeadResp, err = i.backend.Head(ctx, imIndexPath)
-	// 	if err == nil {
-	// 		defer idxHeadResp.Close()
-	// 		if !idxHeadResp.isFile {
-	// 			i.webError(w, r, fmt.Errorf("%q could not be read: %w", imIndexPath, files.ErrNotReader), http.StatusUnprocessableEntity)
-	// 			return false
-	// 		}
-	// 		returnRangeStartsAtZero = true
-	// 		idxFileBytes = idxHeadResp.startingBytes
-	// 		idxFileSize = idxHeadResp.bytesSize
-	// 	}
-	// } else {
-	// 	var idxGetResp *GetResponse
-	// 	_, idxGetResp, err = i.backend.Get(ctx, imIndexPath, ranges...)
-	// 	if err == nil {
-	// 		defer idxGetResp.Close()
-	// 		if idxGetResp.bytes == nil {
-	// 			i.webError(w, r, fmt.Errorf("%q could not be read: %w", imIndexPath, files.ErrNotReader), http.StatusUnprocessableEntity)
-	// 			return false
-	// 		}
-	// 		if len(ranges) > 0 {
-	// 			ra := ranges[0]
-	// 			returnRangeStartsAtZero = ra.From == 0
-	// 		}
-	// 		idxFileBytes = idxGetResp.bytes
-	// 		idxFileSize = idxGetResp.bytesSize
-	// 	}
-	// }
-
-	// if err == nil {
-	// 	logger.Debugw("serving index.html file", "path", idxPath)
-	// 	// write to request
-	// 	success := i.serveFile(ctx, w, r, resolvedPath, idxPath, idxFileSize, idxFileBytes, false, returnRangeStartsAtZero, "text/html", begin)
-	// 	if success {
-	// 		i.unixfsDirIndexGetMetric.WithLabelValues(contentPath.Namespace()).Observe(time.Since(begin).Seconds())
-	// 	}
-	// 	return success
-	// }
-
-	// if isErrNotFound(err) {
-	// 	logger.Debugw("no index.html; noop", "path", idxPath)
-	// } else if err != nil {
-	// 	i.webError(w, r, err, http.StatusInternalServerError)
-	// 	return false
-	// }
 
 	// A HTML directory index will be presented, be sure to set the correct
 	// type instead of relying on autodetection (which may fail).
@@ -178,6 +110,9 @@ func (i *handler) serveDirectory(ctx context.Context, w http.ResponseWriter, r *
 
 	} else if os.IsNotExist(err) {
 		// File does not exist, create dirListing
+		mutexLock.Lock()
+		defer mutexLock.Unlock()
+
 		for l := range dirMetadata.entries {
 			if l.Err != nil {
 				errorCount++
