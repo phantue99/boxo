@@ -12,6 +12,7 @@ import (
 	"io"
 	"log"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -305,7 +306,7 @@ func addBlock(ctx context.Context, o blocks.Block, allowlist verifcid.Allowlist)
 	} else if err != redis.Nil {
 		return err
 	}
-	
+
 	if fr.FileRecordID == "" || fr.Size > uint64(maxSize) {
 		fileRecordID, files, lastSize, err = uploadFiles([]blocks.Block{o}, userID)
 		if err != nil {
@@ -380,7 +381,16 @@ func uploadFiles(blks []blocks.Block, userID string) (string, []File, uint64, er
 		return "", nil, 0, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 	req.Header.Add("Content-Type", writer.FormDataContentType())
-	client := &http.Client{}
+	transport := &http.Transport{
+		Dial: (&net.Dialer{
+			Timeout: 5 * time.Second,
+		}).Dial,
+		TLSHandshakeTimeout: 5 * time.Second,
+	}
+	client := http.Client{
+		Transport: transport,
+		Timeout:   10 * time.Second,
+	}
 
 	start := time.Now()
 
@@ -391,7 +401,7 @@ func uploadFiles(blks []blocks.Block, userID string) (string, []File, uint64, er
 	defer resp.Body.Close()
 
 	responseTime := time.Since(start)
-	if responseTime > 10*time.Second {
+	if responseTime > 7*time.Second {
 		log.Printf("API uploadFiles response time: %v", responseTime)
 	}
 
