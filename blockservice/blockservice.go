@@ -683,7 +683,7 @@ func getBlock(ctx context.Context, c cid.Cid, bs blockstore.Blockstore, allowlis
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			logger.Debugf("Request failed with status %d", resp.StatusCode)
-			return nil, err
+			return nil, errors.New("failed to get data")
 		}
 
 		bdata, err := io.ReadAll(resp.Body)
