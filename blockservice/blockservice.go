@@ -307,19 +307,9 @@ func addBlock(ctx context.Context, o blocks.Block, allowlist verifcid.Allowlist)
 		return err
 	}
 
-	if fr.FileRecordID == "" || fr.Size > uint64(maxSize) {
-		fileRecordID, files, lastSize, err = uploadFiles([]blocks.Block{o}, userID)
-		if err != nil {
-			return fmt.Errorf("[addBlock] failed to upload file and get file record ID: %w", err)
-		}
-	} else {
-		files, lastSize, err = appendFiles([]blocks.Block{o}, fileRecordID, userID)
-		if err != nil {
-			fileRecordID, files, lastSize, err = uploadFiles([]blocks.Block{o}, userID)
-			if err != nil {
-				return fmt.Errorf("[addBlock] failed to upload file and get file record ID after append files fail: %w", err)
-			}
-		}
+	fileRecordID, files, lastSize, err = uploadFiles([]blocks.Block{o}, userID)
+	if err != nil {
+		return fmt.Errorf("[addBlock] failed to upload file and get file record ID: %w", err)
 	}
 
 	if userID != "" {
@@ -588,19 +578,9 @@ func addBlocks(ctx context.Context, bs []blocks.Block, allowlist verifcid.Allowl
 		err          error
 		files        []File
 	)
-	if fr.FileRecordID == "" || fr.Size > uint64(maxSize) {
-		fileRecordID, files, lastSize, err = uploadFiles(toput, userID)
-		if err != nil {
-			return nil, fmt.Errorf("[addBlocks] failed to upload file and get file record ID: %w", err)
-		}
-	} else {
-		files, lastSize, err = appendFiles(toput, fileRecordID, userID)
-		if err != nil {
-			fileRecordID, files, lastSize, err = uploadFiles(toput, userID)
-			if err != nil {
-				return nil, fmt.Errorf("[addBlocks] failed to upload file and get file record ID after append files fail: %w", err)
-			}
-		}
+	fileRecordID, files, lastSize, err = uploadFiles(toput, userID)
+	if err != nil {
+		return nil, fmt.Errorf("[addBlocks] failed to upload file and get file record ID: %w", err)
 	}
 
 	if userID != "" {
