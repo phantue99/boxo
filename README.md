@@ -1,4 +1,4 @@
-<h1 align="center">
+ <h1 align="center">
   <br>
   <a href="#readme"><img src="https://github.com/ipfs/boxo/assets/157609/3c5e7391-fbc2-405b-9efc-920f4fd13b39" alt="Boxo logo" title="Boxo logo" width="200"></a>
   <br>
