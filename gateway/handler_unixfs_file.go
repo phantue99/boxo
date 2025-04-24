@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/ipfs/boxo/images"
 	"io"
 	"mime"
 	"net/http"
 	gopath "path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -69,6 +71,50 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 
 			ctype = mimeType.String()
 			content = io.MultiReader(&buf, fileBytes)
+		}
+
+		width := r.URL.Query().Get("width")
+		height := r.URL.Query().Get("height")
+		animated := r.URL.Query().Get("animated")
+		shouldResize := width != "" || height != ""
+		// Resize and scale if options are provided
+		if strings.HasPrefix(ctype, "image/") && shouldResize {
+			var (
+				widthVal, heightVal *uint
+				animatedVal         bool
+				err                 error
+			)
+
+			if animated != "" && animated != "true" && animated != "false" {
+				http.Error(w, fmt.Sprintf("invalid value for animated"), http.StatusBadRequest)
+				return false
+			}
+			if width != "" {
+				parsedWidth, err := strconv.ParseUint(width, 10, 16)
+				if err != nil {
+					http.Error(w, fmt.Sprintf("invalid value for width: %s", width), http.StatusBadRequest)
+					return false
+				}
+				parsedWidthUint := uint(parsedWidth)
+				widthVal = &parsedWidthUint
+			}
+			if height != "" {
+				parsedHeight, err := strconv.ParseUint(height, 10, 16)
+				if err != nil {
+					http.Error(w, fmt.Sprintf("invalid value for height: %s", height), http.StatusBadRequest)
+					return false
+				}
+				parsedHeightUint := uint(parsedHeight)
+				heightVal = &parsedHeightUint
+			}
+
+			animatedVal = animated == "true"
+			resizer := images.ResizerFromMimeType(ctype)
+			content, err = resizer.Resize(content, widthVal, heightVal, animatedVal)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("cannot resize image: %s", err.Error()), http.StatusInternalServerError)
+				return false
+			}
 		}
 		// Strip the encoding from the HTML Content-Type header and let the
 		// browser figure it out.
