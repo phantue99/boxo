@@ -6,6 +6,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"io"
 	"testing"
 
@@ -296,11 +297,9 @@ func TestAllowlist(t *testing.T) {
 
 func TestEncryptDecrypt(t *testing.T) {
 	plainText := []byte("block raw data")
-	randomEncryptionKey := make([]byte, 32)
-	if _, err := io.ReadFull(rand.Reader, randomEncryptionKey); err != nil {
-		t.Fatal(err)
-	}
-	cipherBlock, err := aes.NewCipher(randomEncryptionKey)
+	encryptionKey := sha256.Sum256([]byte("encryption key"))
+	prefix := "14321489284919321983123"
+	cipherBlock, err := aes.NewCipher(encryptionKey[:])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,8 +312,11 @@ func TestEncryptDecrypt(t *testing.T) {
 		t.Fatal(err)
 	}
 	encrypted := gcm.Seal(nonce, nonce, plainText, nil)
+	encrypted = append([]byte(prefix), encrypted...)
 	t.Logf("encrypted: %v", encrypted)
 
+	// remove prefix
+	encrypted = encrypted[len(prefix):]
 	nonceText, cipherText := encrypted[:gcm.NonceSize()], encrypted[gcm.NonceSize():]
 	plain, err := gcm.Open(nil, nonceText, cipherText, nil)
 	if err != nil {

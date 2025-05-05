@@ -9,6 +9,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -121,17 +122,18 @@ type File struct {
 }
 
 var (
-	uploader                      string
-	pinningService                string
-	isDedicatedGateway            bool
-	maxSize                       = 100 * 1024 * 1024 // 100MB
-	rdb                           *redis.Client
-	rabbitMQ                      *rabbitmq.RabbitMQ
-	defaultChunkHash              = "122059948439065f29619ef41280cbb932be52c56d99c5966b65e0111239f098bbef"
-	blockEncryptionRedisKeyFormat = "key_%s"
+	uploader             string
+	pinningService       string
+	isDedicatedGateway   bool
+	maxSize              = 100 * 1024 * 1024 // 100MB
+	rdb                  *redis.Client
+	rabbitMQ             *rabbitmq.RabbitMQ
+	defaultChunkHash     = "122059948439065f29619ef41280cbb932be52c56d99c5966b65e0111239f098bbef"
+	blockEncryptionKey   string
+	encryptedBlockPrefix string
 )
 
-func InitBlockService(uploaderURL, pinningServiceURL string, _isDedicatedGateway bool, addr string, amqpConnect string) error {
+func InitBlockService(uploaderURL, pinningServiceURL string, _isDedicatedGateway bool, addr string, amqpConnect string, encryptionKey string, encryptedBlockDataPrefix string) error {
 	if uploaderURL != "" {
 		uploader = uploaderURL
 	}
@@ -155,7 +157,8 @@ func InitBlockService(uploaderURL, pinningServiceURL string, _isDedicatedGateway
 	})
 
 	rabbitMQ = rabbitmq.InitializeRabbitMQ(amqpConnect, "bandwidth")
-
+	blockEncryptionKey = encryptionKey
+	encryptedBlockPrefix = encryptedBlockDataPrefix
 	ctx := context.Background()
 
 	rdb.Ping(ctx)
@@ -294,7 +297,7 @@ func addBlock(ctx context.Context, o blocks.Block, allowlist verifcid.Allowlist)
 		if err := json.Unmarshal(data, &f); err != nil {
 			return nil
 		}
-	} else if err != redis.Nil {
+	} else if !errors.Is(err, redis.Nil) {
 		return err
 	}
 
@@ -334,12 +337,10 @@ func uploadFiles(blks []blocks.Block) (string, []File, error) {
 			return "", nil, err
 		}
 
-		// gen 32-byte random key
-		randomEncryptionKey := make([]byte, 32)
-		if _, err := io.ReadFull(rand.Reader, randomEncryptionKey); err != nil {
-			return "", nil, err
-		}
-		cipherBlock, err := aes.NewCipher(randomEncryptionKey)
+		// gen 32-byte key from master key + cid hash
+		cidHash := block.Cid().Hash().HexString()
+		encryptKey := sha256.Sum256([]byte(cidHash + blockEncryptionKey))
+		cipherBlock, err := aes.NewCipher(encryptKey[:])
 		if err != nil {
 			return "", nil, err
 		}
@@ -353,11 +354,8 @@ func uploadFiles(blks []blocks.Block) (string, []File, error) {
 		}
 		// Encrypt the block's raw data
 		encryptedData := gcm.Seal(nonce, nonce, block.RawData(), nil)
-		// Save the key to redis
-		redisKey := fmt.Sprintf(blockEncryptionRedisKeyFormat, block.Cid().Hash().HexString())
-		if rdb.Set(context.Background(), redisKey, randomEncryptionKey, 0).Err() != nil {
-			return "", nil, err
-		}
+		// Prepend prefix to encrypted data
+		encryptedData = append([]byte(encryptedBlockPrefix), encryptedData...)
 
 		// Write the block's encrypted data to the form file part
 		_, err = part.Write(encryptedData)
@@ -573,10 +571,10 @@ func getBlock(ctx context.Context, c cid.Cid, bs blockstore.Blockstore, allowlis
 			return nil, err
 		}
 		hash := c.Hash().HexString()
-		blkEncryptKey, err := rdb.Get(ctx, fmt.Sprintf(blockEncryptionRedisKeyFormat, hash)).Bytes()
-		// block is encrypted
-		if err == nil && len(blkEncryptKey) > 0 {
-			cipherBlock, err := aes.NewCipher(blkEncryptKey)
+		isEncryptedBlock := bytes.HasPrefix(bdata, []byte(encryptedBlockPrefix))
+		if isEncryptedBlock {
+			blkEncryptKey := sha256.Sum256([]byte(hash + blockEncryptionKey))
+			cipherBlock, err := aes.NewCipher(blkEncryptKey[:])
 			if err != nil {
 				return nil, errors.New("malformed block encryption key")
 			}
@@ -588,6 +586,9 @@ func getBlock(ctx context.Context, c cid.Cid, bs blockstore.Blockstore, allowlis
 			if len(bdata) < nonceSize {
 				return nil, errors.New("encrypted block nonce size is invalid")
 			}
+			// removes the encryption prefix
+			bdata = bdata[len(encryptedBlockPrefix):]
+
 			nonce, cipherText := bdata[:nonceSize], bdata[nonceSize:]
 			bdata, err = gcm.Open(nil, nonce, cipherText, nil)
 			if err != nil {
