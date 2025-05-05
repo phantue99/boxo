@@ -6,6 +6,9 @@ package blockservice
 import (
 	"bytes"
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -118,22 +121,25 @@ type File struct {
 }
 
 var (
-	uploader           string
-	pinningService     string
-	isDedicatedGateway bool
-	maxSize            = 100 * 1024 * 1024 // 100MB
-	rdb                *redis.Client
-	rabbitMQ           *rabbitmq.RabbitMQ
-	defaultChunkHash   = "122059948439065f29619ef41280cbb932be52c56d99c5966b65e0111239f098bbef"
+	uploader                      string
+	pinningService                string
+	isDedicatedGateway            bool
+	maxSize                       = 100 * 1024 * 1024 // 100MB
+	rdb                           *redis.Client
+	rabbitMQ                      *rabbitmq.RabbitMQ
+	blockEncryptionKey            string
+	defaultChunkHash              = "122059948439065f29619ef41280cbb932be52c56d99c5966b65e0111239f098bbef"
+	blockEncryptionRedisKeyFormat = "key_%s"
 )
 
-func InitBlockService(uploaderURL, pinningServiceURL string, _isDedicatedGateway bool, addr string, amqpConnect string) error {
+func InitBlockService(uploaderURL, pinningServiceURL string, _isDedicatedGateway bool, addr string, amqpConnect string, blockEncryptKey string) error {
 	if uploaderURL != "" {
 		uploader = uploaderURL
 	}
 	if pinningServiceURL != "" {
 		pinningService = pinningServiceURL
 	}
+	blockEncryptionKey = blockEncryptKey
 	isDedicatedGateway = _isDedicatedGateway
 
 	// Return an error if any of the URLs is empty.
@@ -278,9 +284,9 @@ func addBlock(ctx context.Context, o blocks.Block, allowlist verifcid.Allowlist)
 	}
 	var (
 		fileRecordID string
-		files []File
-		err   error
-		data  []byte
+		files        []File
+		err          error
+		data         []byte
 	)
 
 	data, err = rdb.Get(ctx, hash).Bytes()
@@ -330,8 +336,33 @@ func uploadFiles(blks []blocks.Block) (string, []File, error) {
 			return "", nil, err
 		}
 
-		// Write the block's raw data to the form file part
-		_, err = part.Write(block.RawData())
+		// gen 32-byte random key
+		randomEncryptionKey := make([]byte, 32)
+		if _, err := io.ReadFull(rand.Reader, randomEncryptionKey); err != nil {
+			return "", nil, err
+		}
+		cipherBlock, err := aes.NewCipher(randomEncryptionKey)
+		if err != nil {
+			return "", nil, err
+		}
+		gcm, err := cipher.NewGCM(cipherBlock)
+		if err != nil {
+			return "", nil, err
+		}
+		nonce := make([]byte, gcm.NonceSize())
+		if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
+			return "", nil, err
+		}
+		// Encrypt the block's raw data
+		encryptedData := gcm.Seal(nonce, nonce, block.RawData(), nil)
+		// Save the key to redis
+		redisKey := fmt.Sprintf(blockEncryptionRedisKeyFormat, block.Cid().Hash().HexString())
+		if rdb.Set(context.Background(), redisKey, randomEncryptionKey, 0).Err() != nil {
+			return "", nil, err
+		}
+
+		// Write the block's encrypted data to the form file part
+		_, err = part.Write(encryptedData)
 		if err != nil {
 			log.Printf("failed to write data to form file: %v", err)
 			return "", nil, err
@@ -544,6 +575,27 @@ func getBlock(ctx context.Context, c cid.Cid, bs blockstore.Blockstore, allowlis
 			return nil, err
 		}
 		hash := c.Hash().HexString()
+		blkEncryptKey, err := rdb.Get(ctx, fmt.Sprintf(blockEncryptionRedisKeyFormat, hash)).Bytes()
+		// block is encrypted
+		if err == nil && len(blkEncryptKey) > 0 {
+			cipherBlock, err := aes.NewCipher(blkEncryptKey)
+			if err != nil {
+				return nil, errors.New("malformed block encryption key")
+			}
+			gcm, err := cipher.NewGCM(cipherBlock)
+			if err != nil {
+				return nil, errors.New("malformed block encryption key")
+			}
+			nonceSize := gcm.NonceSize()
+			if len(bdata) < nonceSize {
+				return nil, errors.New("encrypted block nonce size is invalid")
+			}
+			nonce, cipherText := bdata[:nonceSize], bdata[nonceSize:]
+			bdata, err = gcm.Open(nil, nonce, cipherText, nil)
+			if err != nil {
+				return nil, err
+			}
+		}
 
 		if err := addBandwidthUsage(isDedicatedGateway, f.Size, hash); err != nil {
 			fmt.Printf("Failed to add bandwidth usage: %v", err)

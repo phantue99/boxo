@@ -1,7 +1,12 @@
 package blockservice
 
 import (
+	"bytes"
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"io"
 	"testing"
 
 	blockstore "github.com/ipfs/boxo/blockstore"
@@ -287,4 +292,36 @@ func TestAllowlist(t *testing.T) {
 	blockservice := New(bs, nil, WithAllowlist(verifcid.NewAllowlist(map[uint64]bool{multihash.BLAKE3: true})))
 	check(blockservice.GetBlock)
 	check(NewSession(ctx, blockservice).GetBlock)
+}
+
+func TestEncryptDecrypt(t *testing.T) {
+	plainText := []byte("block raw data")
+	randomEncryptionKey := make([]byte, 32)
+	if _, err := io.ReadFull(rand.Reader, randomEncryptionKey); err != nil {
+		t.Fatal(err)
+	}
+	cipherBlock, err := aes.NewCipher(randomEncryptionKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gcm, err := cipher.NewGCM(cipherBlock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
+		t.Fatal(err)
+	}
+	encrypted := gcm.Seal(nonce, nonce, plainText, nil)
+	t.Logf("encrypted: %v", encrypted)
+
+	nonceText, cipherText := encrypted[:gcm.NonceSize()], encrypted[gcm.NonceSize():]
+	plain, err := gcm.Open(nil, nonceText, cipherText, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("plain: %v", string(plain))
+	if !bytes.Equal(plain, plainText) {
+		t.Fatal("decryption failed")
+	}
 }

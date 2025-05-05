@@ -3,7 +3,6 @@ package images
 import (
 	"bytes"
 	"github.com/chai2010/webp"
-	libresize "github.com/nfnt/resize"
 	"golang.org/x/image/bmp"
 	"image"
 	"image/gif"
@@ -12,9 +11,39 @@ import (
 	"io"
 )
 
+const (
+	FitModeScaleDown = "scale-down"
+	FitModeContain   = "contain"
+	FitModeCover     = "cover"
+	FitModeCrop      = "crop"
+	FitModePad       = "pad"
+)
+
+type ResizeOptions struct {
+	Width             *uint
+	Height            *uint
+	PreserveAnimation bool
+	// Fit is one of FitModeScaleDown, FitModeContain, FitModeCover, FitModeCrop, FitModePad
+	Fit              string
+	WidthGravity     float32
+	HeightGravity    float32
+	Quality          int
+	DevicePixelRatio float32
+}
+
 type Resizer interface {
-	// Resize takes an image reader, resizes the image and returns a new reader of the resized image and an error if any
-	Resize(imgReader io.Reader, width *uint, height *uint, animated bool) (io.Reader, error)
+	Resize(imgReader io.Reader, opts ResizeOptions) (io.Reader, error)
+}
+
+func DefaultResizeOptions() ResizeOptions {
+	return ResizeOptions{
+		Width:             nil,
+		Height:            nil,
+		PreserveAnimation: false,
+		Fit:               FitModeScaleDown,
+		Quality:           80,
+		DevicePixelRatio:  1.0,
+	}
 }
 
 func ResizerFromMimeType(mimeType string) Resizer {
@@ -38,13 +67,13 @@ func ResizerFromMimeType(mimeType string) Resizer {
 
 type noOpResizer struct{}
 
-func (rsz *noOpResizer) Resize(imgReader io.Reader, _ *uint, _ *uint, _ bool) (io.Reader, error) {
+func (rsz *noOpResizer) Resize(imgReader io.Reader, _ ResizeOptions) (io.Reader, error) {
 	return imgReader, nil
 }
 
 type webpResizer struct{}
 
-func (rsz *webpResizer) Resize(imgReader io.Reader, width *uint, height *uint, _ bool) (io.Reader, error) {
+func (rsz *webpResizer) Resize(imgReader io.Reader, opts ResizeOptions) (io.Reader, error) {
 	// Read the entire image content
 	imgData, err := io.ReadAll(imgReader)
 	if err != nil {
@@ -58,12 +87,13 @@ func (rsz *webpResizer) Resize(imgReader io.Reader, width *uint, height *uint, _
 	}
 
 	// resize img
-	resizedImg := resize(img, width, height, libresize.Lanczos3)
+	resizedImg := resize(img, opts)
 
 	// Encode the resized image as WebP
 	var buf bytes.Buffer
 	options := &webp.Options{
 		Lossless: true,
+		Quality:  float32(opts.Quality),
 	}
 	if err := webp.Encode(&buf, resizedImg, options); err != nil {
 		return nil, err
@@ -74,7 +104,7 @@ func (rsz *webpResizer) Resize(imgReader io.Reader, width *uint, height *uint, _
 
 type pngResizer struct{}
 
-func (rsz *pngResizer) Resize(imgReader io.Reader, width *uint, height *uint, _ bool) (io.Reader, error) {
+func (rsz *pngResizer) Resize(imgReader io.Reader, opts ResizeOptions) (io.Reader, error) {
 	imgData, err := io.ReadAll(imgReader)
 	if err != nil {
 		return nil, err
@@ -87,7 +117,7 @@ func (rsz *pngResizer) Resize(imgReader io.Reader, width *uint, height *uint, _ 
 	}
 
 	// Resize
-	resizedImg := resize(img, width, height, libresize.Lanczos3)
+	resizedImg := resize(img, opts)
 
 	// Encode as png
 	var buf bytes.Buffer
@@ -99,7 +129,7 @@ func (rsz *pngResizer) Resize(imgReader io.Reader, width *uint, height *uint, _ 
 
 type jpgResizer struct{}
 
-func (rsz *jpgResizer) Resize(imgReader io.Reader, width *uint, height *uint, _ bool) (io.Reader, error) {
+func (rsz *jpgResizer) Resize(imgReader io.Reader, opts ResizeOptions) (io.Reader, error) {
 	imgData, err := io.ReadAll(imgReader)
 	if err != nil {
 		return nil, err
@@ -110,11 +140,11 @@ func (rsz *jpgResizer) Resize(imgReader io.Reader, width *uint, height *uint, _ 
 		return nil, err
 	}
 
-	resizedImg := resize(img, width, height, libresize.Lanczos3)
+	resizedImg := resize(img, opts)
 
 	var buf bytes.Buffer
 	options := &jpeg.Options{
-		Quality: 90,
+		Quality: opts.Quality,
 	}
 	if err := jpeg.Encode(&buf, resizedImg, options); err != nil {
 		return nil, err
@@ -124,7 +154,7 @@ func (rsz *jpgResizer) Resize(imgReader io.Reader, width *uint, height *uint, _ 
 
 type bmpResizer struct{}
 
-func (rsz *bmpResizer) Resize(imgReader io.Reader, width *uint, height *uint, _ bool) (io.Reader, error) {
+func (rsz *bmpResizer) Resize(imgReader io.Reader, opts ResizeOptions) (io.Reader, error) {
 	imgData, err := io.ReadAll(imgReader)
 	if err != nil {
 		return nil, err
@@ -135,7 +165,7 @@ func (rsz *bmpResizer) Resize(imgReader io.Reader, width *uint, height *uint, _ 
 		return nil, err
 	}
 
-	resizedImg := resize(img, width, height, libresize.Lanczos3)
+	resizedImg := resize(img, opts)
 
 	var buf bytes.Buffer
 	if err := bmp.Encode(&buf, resizedImg); err != nil {
@@ -146,10 +176,10 @@ func (rsz *bmpResizer) Resize(imgReader io.Reader, width *uint, height *uint, _ 
 
 type gifResizer struct{}
 
-func (rsz *gifResizer) Resize(imgReader io.Reader, width *uint, height *uint, animated bool) (io.Reader, error) {
+func (rsz *gifResizer) Resize(imgReader io.Reader, opts ResizeOptions) (io.Reader, error) {
 	var buf bytes.Buffer
 
-	if animated {
+	if opts.PreserveAnimation {
 		animatedImg, err := gif.DecodeAll(imgReader)
 		if err != nil {
 			return nil, err
@@ -166,7 +196,7 @@ func (rsz *gifResizer) Resize(imgReader io.Reader, width *uint, height *uint, an
 			}
 
 			// resize the frame
-			resizedFrame := resize(rgbaImg, width, height, libresize.Lanczos3)
+			resizedFrame := resize(rgbaImg, opts)
 
 			// Convert back to Paletted (using original palette)
 			newBounds := resizedFrame.Bounds()
@@ -187,12 +217,12 @@ func (rsz *gifResizer) Resize(imgReader io.Reader, width *uint, height *uint, an
 		}
 	}
 
-	if !animated {
+	if !opts.PreserveAnimation {
 		firstFrame, err := gif.Decode(imgReader)
 		if err != nil {
 			return nil, err
 		}
-		resizedFrame := resize(firstFrame, width, height, libresize.Lanczos3)
+		resizedFrame := resize(firstFrame, opts)
 		if err = gif.Encode(&buf, resizedFrame, &gif.Options{
 			NumColors: 256,
 		}); err != nil {

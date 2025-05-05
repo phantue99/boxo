@@ -73,44 +73,64 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 			content = io.MultiReader(&buf, fileBytes)
 		}
 
+		resizeOpts := images.DefaultResizeOptions()
 		width := r.URL.Query().Get("width")
 		height := r.URL.Query().Get("height")
 		animated := r.URL.Query().Get("animated")
-		shouldResize := width != "" || height != ""
+		quality := r.URL.Query().Get("quality")
+		dpr := r.URL.Query().Get("dpr")
+		shouldResize := width != "" || height != "" || animated != "" || quality != "" || dpr != ""
 		// Resize and scale if options are provided
 		if strings.HasPrefix(ctype, "image/") && shouldResize {
-			var (
-				widthVal, heightVal *uint
-				animatedVal         bool
-				err                 error
-			)
-
+			var err error
 			if animated != "" && animated != "true" && animated != "false" {
 				http.Error(w, fmt.Sprintf("invalid value for animated"), http.StatusBadRequest)
 				return false
 			}
 			if width != "" {
-				parsedWidth, err := strconv.ParseUint(width, 10, 16)
+				parsedWidth, err := strconv.ParseUint(width, 10, 16) // 16-bit = 65535, should be enough
 				if err != nil {
 					http.Error(w, fmt.Sprintf("invalid value for width: %s", width), http.StatusBadRequest)
 					return false
 				}
 				parsedWidthUint := uint(parsedWidth)
-				widthVal = &parsedWidthUint
+				resizeOpts.Width = &parsedWidthUint
 			}
 			if height != "" {
-				parsedHeight, err := strconv.ParseUint(height, 10, 16)
+				parsedHeight, err := strconv.ParseUint(height, 10, 16) // 16-bit = 65535, should be enough
 				if err != nil {
 					http.Error(w, fmt.Sprintf("invalid value for height: %s", height), http.StatusBadRequest)
 					return false
 				}
 				parsedHeightUint := uint(parsedHeight)
-				heightVal = &parsedHeightUint
+				resizeOpts.Height = &parsedHeightUint
+			}
+			if quality != "" {
+				parsedQuality, err := strconv.ParseUint(quality, 10, 7) // 7-bit = 127, range should be 0-100
+				if err != nil {
+					http.Error(w, fmt.Sprintf("invalid value for quality: %s", quality), http.StatusBadRequest)
+					return false
+				}
+				parsedQualityUint := uint(parsedQuality)
+				if parsedQualityUint > 100 {
+					parsedQualityUint = 100
+				}
+				resizeOpts.Quality = int(parsedQualityUint)
+			}
+			if dpr != "" {
+				parsedDpr, err := strconv.ParseFloat(dpr, 32) // convertible to float32 without changing value
+				if err != nil {
+					http.Error(w, fmt.Sprintf("invalid value for dpr: %s", dpr), http.StatusBadRequest)
+					return false
+				}
+				if parsedDpr != 0 {
+					resizeOpts.DevicePixelRatio = float32(parsedDpr)
+				}
 			}
 
-			animatedVal = animated == "true"
+			resizeOpts.PreserveAnimation = animated == "true"
 			resizer := images.ResizerFromMimeType(ctype)
-			content, err = resizer.Resize(content, widthVal, heightVal, animatedVal)
+			content, err = resizer.Resize(content, resizeOpts)
 			if err != nil {
 				http.Error(w, fmt.Sprintf("cannot resize image: %s", err.Error()), http.StatusInternalServerError)
 				return false
