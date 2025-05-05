@@ -127,19 +127,17 @@ var (
 	maxSize                       = 100 * 1024 * 1024 // 100MB
 	rdb                           *redis.Client
 	rabbitMQ                      *rabbitmq.RabbitMQ
-	blockEncryptionKey            string
 	defaultChunkHash              = "122059948439065f29619ef41280cbb932be52c56d99c5966b65e0111239f098bbef"
 	blockEncryptionRedisKeyFormat = "key_%s"
 )
 
-func InitBlockService(uploaderURL, pinningServiceURL string, _isDedicatedGateway bool, addr string, amqpConnect string, blockEncryptKey string) error {
+func InitBlockService(uploaderURL, pinningServiceURL string, _isDedicatedGateway bool, addr string, amqpConnect string) error {
 	if uploaderURL != "" {
 		uploader = uploaderURL
 	}
 	if pinningServiceURL != "" {
 		pinningService = pinningServiceURL
 	}
-	blockEncryptionKey = blockEncryptKey
 	isDedicatedGateway = _isDedicatedGateway
 
 	// Return an error if any of the URLs is empty.
