@@ -23,21 +23,20 @@ import (
 	"sync"
 	"time"
 
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
-
-	"github.com/ipfs/boxo/blockstore"
-	"github.com/ipfs/boxo/exchange"
-	"github.com/ipfs/boxo/rabbitmq"
-	"github.com/ipfs/boxo/verifcid"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/redis/go-redis/v9"
 	"github.com/shopspring/decimal"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/ipfs/boxo/blockservice/internal"
+	"github.com/ipfs/boxo/blockstore"
+	"github.com/ipfs/boxo/exchange"
+	"github.com/ipfs/boxo/rabbitmq"
+	"github.com/ipfs/boxo/verifcid"
 )
 
 var logger = logging.Logger("blockservice")
@@ -572,6 +571,24 @@ func getBlock(ctx context.Context, c cid.Cid, bs blockstore.Blockstore, allowlis
 		}
 		hash := c.Hash().HexString()
 		isEncryptedBlock := bytes.HasPrefix(bdata, []byte(encryptedBlockPrefix))
+		defer func() {
+			if isEncryptedBlock {
+				return
+			}
+			if err := deleteBlockCdn(f.FileRecordID); err != nil {
+				logger.Debugf("Failed delete unencrypted block: %v", err)
+				return
+			}
+			blk, err := bs.Get(ctx, c)
+			if err != nil {
+				logger.Debugf("Failed get block from cid: %v", err)
+				return
+			}
+			if err := addBlock(ctx, blk, allowlist); err != nil {
+				logger.Debugf("Failed add block to cdn: %v", err)
+				return
+			}
+		}()
 		if isEncryptedBlock {
 			blkEncryptKey := sha256.Sum256([]byte(hash + blockEncryptionKey))
 			cipherBlock, err := aes.NewCipher(blkEncryptKey[:])
@@ -783,6 +800,28 @@ func getBlockCdn(ctx context.Context, c cid.Cid) (blocks.Block, error) {
 		}
 	}
 	return nil, err
+}
+
+func deleteBlockCdn(fileRecordId string) error {
+	url := fmt.Sprintf("%s/endFileRecord?file_record_id=%s", uploader, fileRecordId)
+	req, err := http.NewRequest(http.MethodDelete, url, nil)
+	if err != nil {
+		return err
+	}
+
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("request delete block failed")
+	}
+
+	return nil
 }
 
 // DeleteBlock deletes a block in the blockservice from the datastore
