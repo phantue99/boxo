@@ -579,8 +579,7 @@ func getBlock(ctx context.Context, c cid.Cid, bs blockstore.Blockstore, allowlis
 				logger.Debugf("Failed delete unencrypted block: %v", err)
 				return
 			}
-			f := fget()
-			blk, err := f.GetBlock(ctx, c)
+			blk, err := blocks.NewBlockWithCid(bdata, c)
 			if err != nil {
 				return
 			}
