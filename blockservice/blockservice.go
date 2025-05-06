@@ -579,13 +579,12 @@ func getBlock(ctx context.Context, c cid.Cid, bs blockstore.Blockstore, allowlis
 				logger.Debugf("Failed delete unencrypted block: %v", err)
 				return
 			}
-			blk, err := bs.Get(ctx, c)
+			f := fget()
+			blk, err := f.GetBlock(ctx, c)
 			if err != nil {
-				logger.Debugf("Failed get block from cid: %v", err)
 				return
 			}
 			if err := addBlock(ctx, blk, allowlist); err != nil {
-				logger.Debugf("Failed add block to cdn: %v", err)
 				return
 			}
 		}()
