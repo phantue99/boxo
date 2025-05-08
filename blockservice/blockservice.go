@@ -580,11 +580,6 @@ func getBlock(ctx context.Context, c cid.Cid, bs blockstore.Blockstore, allowlis
 				logger.Debugf("Failed delete unencrypted block: %v", err)
 				return
 			}
-			// delete file record in redis
-			if err := rdb.Del(ctx, hash); err != nil {
-				return
-			}
-
 			// get block based on data + cid and upload to cdn
 			blk, err := blocks.NewBlockWithCid(bdata, c)
 			if err != nil {
