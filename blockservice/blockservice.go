@@ -715,7 +715,7 @@ func getBlocks(ctx context.Context, ks []cid.Cid, bs blockstore.Blockstore, allo
 
 		var misses []cid.Cid
 		for _, c := range ks {
-			hit, err := getBlockCdn(ctx, c)
+			hit, err := getBlockCdn(ctx, c, allowlist)
 			if err != nil {
 				misses = append(misses, c)
 				continue
@@ -764,42 +764,85 @@ func getBlocks(ctx context.Context, ks []cid.Cid, bs blockstore.Blockstore, allo
 	return out
 }
 
-func getBlockCdn(ctx context.Context, c cid.Cid) (blocks.Block, error) {
+func getBlockCdn(ctx context.Context, c cid.Cid, allowlist verifcid.Allowlist) (blocks.Block, error) {
 	kv, err := rdb.Get(ctx, c.Hash().HexString()).Bytes()
-	if err == nil {
-		var f fileInfo
+	if err != nil {
+		return nil, err
+	}
 
-		err := json.Unmarshal(kv, &f)
+	var f fileInfo
+	err = json.Unmarshal(kv, &f)
+	if err != nil {
+		return nil, err
+	}
+
+	endpoint, err := url.Parse(fmt.Sprintf("%s/cacheFile/%s", uploader, f.FileRecordID))
+	if err != nil {
+		return nil, err
+	}
+
+	rawQuery := endpoint.Query()
+	rawQuery.Set("range", fmt.Sprintf("%d,%d", f.Offset, f.Size))
+	endpoint.RawQuery = rawQuery.Encode()
+	fileUrl := endpoint.String()
+
+	resp, err := http.Get(fileUrl)
+	if err != nil {
+		return nil, err
+	}
+	hash := c.Hash().HexString()
+
+	if err := addBandwidthUsage(isDedicatedGateway, f.Size, hash); err != nil {
+		fmt.Printf("Failed to add bandwidth usage: %v", err)
+	}
+
+	bdata, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	isEncryptedBlock := bytes.HasPrefix(bdata, []byte(encryptedBlockPrefix))
+	defer func() {
+		if isEncryptedBlock {
+			return
+		}
+		// delete block on cdn
+		if err := deleteBlockCdn(f.FileRecordID); err != nil {
+			logger.Debugf("Failed delete unencrypted block: %v", err)
+			return
+		}
+		// get block based on data + cid and upload to cdn
+		blk, err := blocks.NewBlockWithCid(bdata, c)
+		if err != nil {
+			return
+		}
+		if err := addBlock(ctx, blk, allowlist); err != nil {
+			return
+		}
+	}()
+	if isEncryptedBlock {
+		blkEncryptKey := sha256.Sum256([]byte(hash + blockEncryptionKey))
+		cipherBlock, err := aes.NewCipher(blkEncryptKey[:])
+		if err != nil {
+			return nil, errors.New("malformed block encryption key")
+		}
+		gcm, err := cipher.NewGCM(cipherBlock)
+		if err != nil {
+			return nil, errors.New("malformed block encryption key")
+		}
+		nonceSize := gcm.NonceSize()
+		if len(bdata) < nonceSize {
+			return nil, errors.New("encrypted block nonce size is invalid")
+		}
+		// removes the encryption prefix
+		bdata = bdata[len(encryptedBlockPrefix):]
+
+		nonce, cipherText := bdata[:nonceSize], bdata[nonceSize:]
+		bdata, err = gcm.Open(nil, nonce, cipherText, nil)
 		if err != nil {
 			return nil, err
-		}
-
-		endpoint, err := url.Parse(fmt.Sprintf("%s/cacheFile/%s", uploader, f.FileRecordID))
-		if err != nil {
-			return nil, err
-		}
-
-		rawQuery := endpoint.Query()
-		rawQuery.Set("range", fmt.Sprintf("%d,%d", f.Offset, f.Size))
-		endpoint.RawQuery = rawQuery.Encode()
-		fileUrl := endpoint.String()
-
-		resp, err := http.Get(fileUrl)
-		if err != nil {
-			return nil, err
-		}
-		hash := c.Hash().HexString()
-
-		if err := addBandwidthUsage(isDedicatedGateway, f.Size, hash); err != nil {
-			fmt.Printf("Failed to add bandwidth usage: %v", err)
-		}
-
-		bdata, err := io.ReadAll(resp.Body)
-		if err == nil {
-			return blocks.NewBlockWithCid(bdata, c)
 		}
 	}
-	return nil, err
+	return blocks.NewBlockWithCid(bdata, c)
 }
 
 func deleteBlockCdn(fileRecordId string) error {
