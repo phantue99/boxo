@@ -81,6 +81,8 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 		dpr := r.URL.Query().Get("dpr")
 		sharpen := r.URL.Query().Get("sharpen")
 		fit := r.URL.Query().Get("fit")
+		widthGravity := r.URL.Query().Get("width-gravity")
+		heightGravity := r.URL.Query().Get("height-gravity")
 		shouldResize := width != "" || height != "" || animated != "" || quality != "" || dpr != "" || sharpen != "" || fit != ""
 		// Resize and scale if options are provided
 		if strings.HasPrefix(ctype, "image/") && shouldResize {
@@ -139,6 +141,32 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 					parsedSharpen = 10
 				}
 				optimizerOpts.Sharpen = parsedSharpen
+			}
+			if widthGravity != "" {
+				parsedWidthGravity, err := strconv.ParseFloat(widthGravity, 32)
+				if err != nil {
+					parsedWidthGravity = 0.5
+				}
+				if parsedWidthGravity > 1 {
+					parsedWidthGravity = 1
+				}
+				if parsedWidthGravity < 0 {
+					parsedWidthGravity = 0
+				}
+				optimizerOpts.WidthGravity = float32(parsedWidthGravity)
+			}
+			if heightGravity != "" {
+				parsedHeightGravity, err := strconv.ParseFloat(heightGravity, 32)
+				if err != nil {
+					parsedHeightGravity = 0.5
+				}
+				if parsedHeightGravity > 1 {
+					parsedHeightGravity = 1
+				}
+				if parsedHeightGravity < 0 {
+					parsedHeightGravity = 0
+				}
+				optimizerOpts.HeightGravity = float32(parsedHeightGravity)
 			}
 
 			switch fit {
