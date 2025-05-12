@@ -1,10 +1,10 @@
 package gateway
 
 import (
+	aiozimageoptimizer "10.0.0.50/hung.gia.lam/aioz-image-optimizer"
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/ipfs/boxo/images"
 	"io"
 	"mime"
 	"net/http"
@@ -73,13 +73,15 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 			content = io.MultiReader(&buf, fileBytes)
 		}
 
-		resizeOpts := images.DefaultResizeOptions()
+		optimizerOpts := aiozimageoptimizer.DefaultOptions()
 		width := r.URL.Query().Get("width")
 		height := r.URL.Query().Get("height")
 		animated := r.URL.Query().Get("animated")
 		quality := r.URL.Query().Get("quality")
 		dpr := r.URL.Query().Get("dpr")
-		shouldResize := width != "" || height != "" || animated != "" || quality != "" || dpr != ""
+		sharpen := r.URL.Query().Get("sharpen")
+		fit := r.URL.Query().Get("fit")
+		shouldResize := width != "" || height != "" || animated != "" || quality != "" || dpr != "" || sharpen != "" || fit != ""
 		// Resize and scale if options are provided
 		if strings.HasPrefix(ctype, "image/") && shouldResize {
 			var err error
@@ -93,8 +95,7 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 					http.Error(w, fmt.Sprintf("invalid value for width: %s", width), http.StatusBadRequest)
 					return false
 				}
-				parsedWidthUint := uint(parsedWidth)
-				resizeOpts.Width = &parsedWidthUint
+				optimizerOpts.Width = uint(parsedWidth)
 			}
 			if height != "" {
 				parsedHeight, err := strconv.ParseUint(height, 10, 16) // 16-bit = 65535, should be enough
@@ -102,8 +103,7 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 					http.Error(w, fmt.Sprintf("invalid value for height: %s", height), http.StatusBadRequest)
 					return false
 				}
-				parsedHeightUint := uint(parsedHeight)
-				resizeOpts.Height = &parsedHeightUint
+				optimizerOpts.Height = uint(parsedHeight)
 			}
 			if quality != "" {
 				parsedQuality, err := strconv.ParseUint(quality, 10, 7) // 7-bit = 127, range should be 0-100
@@ -115,22 +115,49 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 				if parsedQualityUint > 100 {
 					parsedQualityUint = 100
 				}
-				resizeOpts.Quality = int(parsedQualityUint)
+				optimizerOpts.Quality = int(parsedQualityUint)
 			}
 			if dpr != "" {
-				parsedDpr, err := strconv.ParseFloat(dpr, 32) // convertible to float32 without changing value
-				if err != nil {
-					http.Error(w, fmt.Sprintf("invalid value for dpr: %s", dpr), http.StatusBadRequest)
-					return false
+				// Notes: DPR should be in range 1-3
+				parsedDpr, err := strconv.ParseUint(dpr, 10, 32)
+				if err != nil || parsedDpr == 0 {
+					parsedDpr = 1
 				}
-				if parsedDpr != 0 {
-					resizeOpts.DevicePixelRatio = float32(parsedDpr)
+				if parsedDpr > 3 {
+					parsedDpr = 3
+				}
+				if parsedDpr != 1 {
+					optimizerOpts.DevicePixelRatio = uint(parsedDpr)
 				}
 			}
+			if sharpen != "" {
+				parsedSharpen, err := strconv.ParseFloat(sharpen, 32)
+				if err != nil {
+					parsedSharpen = 0
+				}
+				if parsedSharpen > 10 {
+					parsedSharpen = 10
+				}
+				optimizerOpts.Sharpen = parsedSharpen
+			}
 
-			resizeOpts.PreserveAnimation = animated == "true"
-			resizer := images.ResizerFromMimeType(ctype)
-			content, err = resizer.Resize(content, resizeOpts)
+			switch fit {
+			case "scale-down":
+				optimizerOpts.Fit = aiozimageoptimizer.FitModeScaleDown
+			case "contain":
+				optimizerOpts.Fit = aiozimageoptimizer.FitModeContain
+			case "cover":
+				optimizerOpts.Fit = aiozimageoptimizer.FitModeCover
+			case "crop":
+				optimizerOpts.Fit = aiozimageoptimizer.FitModeCrop
+			case "pad":
+				optimizerOpts.Fit = aiozimageoptimizer.FitModePad
+			default:
+				optimizerOpts.Fit = aiozimageoptimizer.FitModeScaleDown
+			}
+			optimizerOpts.PreserveAnimation = animated == "true"
+			optimizer := aiozimageoptimizer.OptimizerFromMimeType(ctype)
+			content, err = optimizer.Optimize(content, optimizerOpts)
 			if err != nil {
 				http.Error(w, fmt.Sprintf("cannot resize image: %s", err.Error()), http.StatusInternalServerError)
 				return false
