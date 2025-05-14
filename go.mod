@@ -5,16 +5,15 @@ go 1.23.4
 toolchain go1.24.1
 
 require (
+	10.0.0.50/hung.gia.lam/aioz-image-optimizer v0.0.3
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/aws/aws-sdk-go-v2 v1.36.3
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.61
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.78.0
 	github.com/benbjohnson/clock v1.3.5
 	github.com/cespare/xxhash/v2 v2.2.0
-	github.com/chai2010/webp v1.4.0
 	github.com/crackcomm/go-gitignore v0.0.0-20170627025303-887ab5e44cc3
 	github.com/cskr/pubsub v1.0.2
-	github.com/disintegration/gift v1.2.1
 	github.com/dustin/go-humanize v1.0.0
 	github.com/gabriel-vasile/mimetype v1.4.1
 	github.com/gogo/protobuf v1.3.2
@@ -78,7 +77,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.14.0
 	go.uber.org/multierr v1.11.0
 	go.uber.org/zap v1.25.0
-	golang.org/x/image v0.27.0
 	golang.org/x/oauth2 v0.8.0
 	golang.org/x/sync v0.14.0
 	golang.org/x/sys v0.20.0
@@ -86,7 +84,6 @@ require (
 )
 
 require (
-	10.0.0.50/hung.gia.lam/aioz-image-optimizer v0.0.0 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.10 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.30 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.34 // indirect
@@ -101,8 +98,11 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.29.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.16 // indirect
 	github.com/aws/smithy-go v1.22.2 // indirect
+	github.com/chai2010/webp v1.4.0 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
+	github.com/disintegration/gift v1.2.1 // indirect
 	github.com/disintegration/imaging v1.6.2 // indirect
+	golang.org/x/image v0.27.0 // indirect
 )
 
 require (
