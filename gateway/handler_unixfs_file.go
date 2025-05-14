@@ -86,9 +86,10 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 		onError := r.URL.Query().Get("on-error")
 
 		shouldRedirectToSourceImg := onError == "redirect"
-		shouldResize := width != "" || height != "" || animated != "" || quality != "" || dpr != "" || sharpen != "" || fit != ""
-		// Resize and scale if options are provided
-		if strings.HasPrefix(ctype, "image/") && shouldResize {
+		shouldOptimize := width != "" || height != "" || animated != "" || quality != "" || dpr != "" || sharpen != "" || fit != ""
+
+		// Optimize if options are provided
+		if strings.HasPrefix(ctype, "image/") && shouldOptimize {
 			var (
 				err        error
 				errMessage string
@@ -99,7 +100,7 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 					return
 				}
 				if shouldRedirectToSourceImg {
-					urlWithoutQuery := r.URL.Path
+					urlWithoutQuery := fmt.Sprintf("https://%s%s", r.Host, r.URL.Path)
 					http.Redirect(w, r, urlWithoutQuery, http.StatusPermanentRedirect)
 					return
 				}
