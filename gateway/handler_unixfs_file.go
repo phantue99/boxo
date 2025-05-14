@@ -83,18 +83,38 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 		fit := r.URL.Query().Get("fit")
 		widthGravity := r.URL.Query().Get("width-gravity")
 		heightGravity := r.URL.Query().Get("height-gravity")
+		onError := r.URL.Query().Get("on-error")
+
+		shouldRedirectToSourceImg := onError == "redirect"
 		shouldResize := width != "" || height != "" || animated != "" || quality != "" || dpr != "" || sharpen != "" || fit != ""
 		// Resize and scale if options are provided
 		if strings.HasPrefix(ctype, "image/") && shouldResize {
-			var err error
+			var (
+				err        error
+				errMessage string
+				code       int
+			)
+			defer func() {
+				if len(errMessage) == 0 {
+					return
+				}
+				if shouldRedirectToSourceImg {
+					urlWithoutQuery := r.URL.Path
+					http.Redirect(w, r, urlWithoutQuery, http.StatusPermanentRedirect)
+					return
+				}
+				http.Error(w, errMessage, code)
+			}()
 			if animated != "" && animated != "true" && animated != "false" {
-				http.Error(w, fmt.Sprintf("invalid value for animated"), http.StatusBadRequest)
+				errMessage = "invalid value for animated"
+				code = http.StatusBadRequest
 				return false
 			}
 			if width != "" {
 				parsedWidth, err := strconv.ParseUint(width, 10, 16) // 16-bit = 65535, should be enough
 				if err != nil {
-					http.Error(w, fmt.Sprintf("invalid value for width: %s", width), http.StatusBadRequest)
+					errMessage = fmt.Sprintf("invalid value for width: %s", width)
+					code = http.StatusBadRequest
 					return false
 				}
 				optimizerOpts.Width = uint(parsedWidth)
@@ -102,7 +122,8 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 			if height != "" {
 				parsedHeight, err := strconv.ParseUint(height, 10, 16) // 16-bit = 65535, should be enough
 				if err != nil {
-					http.Error(w, fmt.Sprintf("invalid value for height: %s", height), http.StatusBadRequest)
+					errMessage = fmt.Sprintf("invalid value for height: %s", height)
+					code = http.StatusBadRequest
 					return false
 				}
 				optimizerOpts.Height = uint(parsedHeight)
@@ -110,7 +131,8 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 			if quality != "" {
 				parsedQuality, err := strconv.ParseUint(quality, 10, 7) // 7-bit = 127, range should be 0-100
 				if err != nil {
-					http.Error(w, fmt.Sprintf("invalid value for quality: %s", quality), http.StatusBadRequest)
+					errMessage = fmt.Sprintf("invalid value for quality: %s", quality)
+					code = http.StatusBadRequest
 					return false
 				}
 				parsedQualityUint := uint(parsedQuality)
@@ -135,6 +157,11 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 			if sharpen != "" {
 				parsedSharpen, err := strconv.ParseFloat(sharpen, 32)
 				if err != nil {
+					errMessage = fmt.Sprintf("invalid value for sharpen: %s", sharpen)
+					code = http.StatusBadRequest
+					return false
+				}
+				if parsedSharpen < 0 {
 					parsedSharpen = 0
 				}
 				if parsedSharpen > 10 {
@@ -145,7 +172,9 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 			if widthGravity != "" {
 				parsedWidthGravity, err := strconv.ParseFloat(widthGravity, 32)
 				if err != nil {
-					parsedWidthGravity = 0.5
+					errMessage = fmt.Sprintf("invalid value for width-gravity: %s", widthGravity)
+					code = http.StatusBadRequest
+					return false
 				}
 				if parsedWidthGravity > 1 {
 					parsedWidthGravity = 1
@@ -158,7 +187,9 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 			if heightGravity != "" {
 				parsedHeightGravity, err := strconv.ParseFloat(heightGravity, 32)
 				if err != nil {
-					parsedHeightGravity = 0.5
+					errMessage = fmt.Sprintf("invalid value for height-gravity: %s", heightGravity)
+					code = http.StatusBadRequest
+					return false
 				}
 				if parsedHeightGravity > 1 {
 					parsedHeightGravity = 1
@@ -187,7 +218,8 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 			optimizer := aiozimageoptimizer.OptimizerFromMimeType(ctype)
 			content, err = optimizer.Optimize(content, optimizerOpts)
 			if err != nil {
-				http.Error(w, fmt.Sprintf("cannot resize image: %s", err.Error()), http.StatusInternalServerError)
+				errMessage = fmt.Sprintf("error optimizing content: %s", err.Error())
+				code = http.StatusInternalServerError
 				return false
 			}
 		}
