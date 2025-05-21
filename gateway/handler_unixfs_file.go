@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	aiozimageoptimizer "github.com/aioz-image-optimizer"
+	aiozimageoptimizer "github.com/lamgiahungaioz/aioz-image-optimizer"
 	"io"
 	"mime"
 	"net/http"

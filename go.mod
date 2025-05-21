@@ -5,7 +5,6 @@ go 1.23.4
 toolchain go1.24.1
 
 require (
-	github.com/aioz-image-optimizer v0.0.4
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/aws/aws-sdk-go-v2 v1.36.3
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.61
@@ -41,6 +40,7 @@ require (
 	github.com/ipld/go-codec-dagpb v1.6.0
 	github.com/ipld/go-ipld-prime v0.21.0
 	github.com/jbenet/goprocess v0.1.4
+	github.com/lamgiahungaioz/aioz-image-optimizer v0.0.4
 	github.com/libp2p/go-buffer-pool v0.1.0
 	github.com/libp2p/go-doh-resolver v0.4.0
 	github.com/libp2p/go-libp2p v0.30.0
@@ -205,4 +205,4 @@ require (
 	lukechampine.com/blake3 v1.2.1 // indirect
 )
 
-replace github.com/aioz-image-optimizer => 10.0.0.50/hung.gia.lam/aioz-image-optimizer v0.0.4
+replace github.com/lamgiahungaioz/aioz-image-optimizer => 10.0.0.50/hung.gia.lam/aioz-image-optimizer v0.0.4
