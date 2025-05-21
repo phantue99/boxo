@@ -5,7 +5,7 @@ go 1.23.4
 toolchain go1.24.1
 
 require (
-	10.0.0.50/hung.gia.lam/aioz-image-optimizer v0.0.4
+	github.com/aioz-image-optimizer v0.0.4
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/aws/aws-sdk-go-v2 v1.36.3
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.61
@@ -204,3 +204,5 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	lukechampine.com/blake3 v1.2.1 // indirect
 )
+
+replace github.com/aioz-image-optimizer => 10.0.0.50/hung.gia.lam/aioz-image-optimizer v0.0.4

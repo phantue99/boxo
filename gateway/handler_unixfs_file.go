@@ -1,10 +1,10 @@
 package gateway
 
 import (
-	aiozimageoptimizer "10.0.0.50/hung.gia.lam/aioz-image-optimizer"
 	"bytes"
 	"context"
 	"fmt"
+	aiozimageoptimizer "github.com/aioz-image-optimizer"
 	"io"
 	"mime"
 	"net/http"
