@@ -40,7 +40,7 @@ require (
 	github.com/ipld/go-codec-dagpb v1.6.0
 	github.com/ipld/go-ipld-prime v0.21.0
 	github.com/jbenet/goprocess v0.1.4
-	github.com/lamgiahungaioz/aioz-image-optimizer v0.0.4
+	github.com/lamgiahungaioz/aioz-image-optimizer v0.0.5
 	github.com/libp2p/go-buffer-pool v0.1.0
 	github.com/libp2p/go-doh-resolver v0.4.0
 	github.com/libp2p/go-libp2p v0.30.0
