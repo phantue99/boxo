@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	aiozimageoptimizer "github.com/lamgiahungaioz/aioz-image-optimizer"
 	"io"
 	"log"
 	"mime/multipart"
@@ -159,6 +160,8 @@ func InitBlockService(uploaderURL, pinningServiceURL string, _isDedicatedGateway
 	blockEncryptionKey = encryptionKey
 	encryptedBlockPrefix = encryptedBlockDataPrefix
 	ctx := context.Background()
+
+	aiozimageoptimizer.SetExiftoolBinPath("/usr/bin/exiftool")
 
 	rdb.Ping(ctx)
 	return nil
