@@ -181,7 +181,8 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 			if format != "" {
 				switch format {
 				case "webp":
-					optimizerOpts.ShouldTransformToWebp = true
+					acceptHeader := r.Header.Get("Accept")
+					optimizerOpts.ShouldTransformToWebp = strings.Contains(acceptHeader, "image/webp")
 				default:
 					optimizerOpts.ShouldTransformToWebp = false
 				}
