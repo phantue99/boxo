@@ -197,7 +197,7 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 					widthGravityStr := parts[0]
 					heightGravityStr := parts[1]
 
-					parsedWidthGravity, err := strconv.ParseUint(widthGravityStr, 10, 32)
+					parsedWidthGravity, err := strconv.ParseFloat(widthGravityStr, 32)
 					if err != nil {
 						errMessage = fmt.Sprintf("invalid value for width gravity: %s", widthGravityStr)
 						code = http.StatusBadRequest
@@ -205,7 +205,7 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 					}
 					optimizerOpts.WidthGravity = float32(parsedWidthGravity)
 
-					parsedHeightGravity, err := strconv.ParseUint(heightGravityStr, 10, 32)
+					parsedHeightGravity, err := strconv.ParseFloat(heightGravityStr, 32)
 					if err != nil {
 						errMessage = fmt.Sprintf("invalid value for height gravity: %s", heightGravityStr)
 						code = http.StatusBadRequest
