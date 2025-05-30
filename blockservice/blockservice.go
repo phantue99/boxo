@@ -162,6 +162,7 @@ func InitBlockService(uploaderURL, pinningServiceURL string, _isDedicatedGateway
 	ctx := context.Background()
 
 	aiozimageoptimizer.SetExiftoolBinPath("/usr/bin/exiftool")
+	aiozimageoptimizer.SetFfmpegBinPath("/usr/bin/ffmpeg")
 
 	rdb.Ping(ctx)
 	return nil

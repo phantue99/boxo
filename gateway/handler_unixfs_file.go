@@ -84,6 +84,7 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 		gravity := r.URL.Query().Get("img-gravity")
 		onError := r.URL.Query().Get("img-onerror")
 		metadata := r.URL.Query().Get("img-metadata")
+		format := r.URL.Query().Get("img-format")
 
 		shouldRedirectToSourceImg := onError == "redirect"
 		shouldOptimize := width != "" || height != "" || animated != "" || quality != "" || dpr != "" || sharpen != "" || fit != ""
@@ -169,6 +170,14 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 					parsedSharpen = 10
 				}
 				optimizerOpts.Sharpen = parsedSharpen
+			}
+			if format != "" {
+				switch format {
+				case "webp":
+					optimizerOpts.ShouldTransformToWebp = true
+				default:
+					optimizerOpts.ShouldTransformToWebp = false
+				}
 			}
 			if gravity != "" {
 				switch gravity {
