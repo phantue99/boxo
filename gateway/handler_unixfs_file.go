@@ -183,7 +183,7 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 				case "bottom":
 					optimizerOpts.GravitySide = aiozimageoptimizer.GravityBottom
 				default:
-					if strings.Contains(gravity, "x") {
+					if !strings.Contains(gravity, "x") {
 						errMessage = fmt.Sprintf("invalid value for gravity: %s", gravity)
 						code = http.StatusBadRequest
 						return false
