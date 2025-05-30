@@ -261,6 +261,10 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 				code = http.StatusInternalServerError
 				return false
 			}
+
+			if optimizerOpts.ShouldTransformToWebp {
+				ctype = "image/webp"
+			}
 		}
 		// Strip the encoding from the HTML Content-Type header and let the
 		// browser figure it out.
