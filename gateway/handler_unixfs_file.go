@@ -87,7 +87,14 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 		format := r.URL.Query().Get("img-format")
 
 		shouldRedirectToSourceImg := onError == "redirect"
-		shouldOptimize := width != "" || height != "" || animated != "" || quality != "" || dpr != "" || sharpen != "" || fit != ""
+		shouldOptimize := width != "" ||
+			height != "" ||
+			animated != "" ||
+			quality != "" ||
+			dpr != "" ||
+			sharpen != "" ||
+			fit != "" ||
+			format != ""
 
 		// Optimize if options are provided
 		if strings.HasPrefix(ctype, "image/") && shouldOptimize {
