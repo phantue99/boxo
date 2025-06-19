@@ -343,7 +343,7 @@ func (i *handler) validateGatewayAccess(ctx context.Context, r *http.Request, ro
 	if err != nil {
 		return false, err
 	}
-	validateEndpoint := fmt.Sprintf("%s/gatewayAccessControlRule/validate", i.pinningApiEndpoint)
+	validateEndpoint := fmt.Sprintf("%s/gatewayAccessControlRules/validate", i.pinningApiEndpoint)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, validateEndpoint, bytes.NewBuffer(reqAsJson))
 	if err != nil {
 		return false, err
