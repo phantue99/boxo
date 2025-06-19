@@ -3,6 +3,9 @@ package gateway
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"fmt"
 	aiozimageoptimizer "github.com/lamgiahungaioz/aioz-image-optimizer"
 	"io"
@@ -38,6 +41,18 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusOK)
 		return true
+	}
+
+	if i.isDedicatedGateway {
+		valid, err := i.validateGatewayAccess(ctx, r, resolvedPath.RootCid().String())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return false
+		}
+		if !valid {
+			http.Error(w, fmt.Sprintf("Gateway access denied for %s", resolvedPath.RootCid()), http.StatusForbidden)
+			return false
+		}
 	}
 
 	var content io.Reader = fileBytes
@@ -299,4 +314,57 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 	}
 
 	return dataSent
+}
+
+func (i *handler) validateGatewayAccess(ctx context.Context, r *http.Request, rootCid string) (bool, error) {
+	type ValidateGatewayAccessRequest struct {
+		GatewayName   string `json:"gatewayName"`
+		CID           string `json:"cid"`
+		AccessKey     string `json:"accessKey"`
+		RequestIp     string `json:"ip"`
+		RequestOrigin string `json:"origin"`
+	}
+	// api.example.com, domain: example.com => subdomain 'api'
+	subdomain := strings.TrimSuffix(r.Host, fmt.Sprintf(".%s", i.domain))
+	// access-key can be from header or url query
+	accessKey := r.Header.Get("x-aiozpin-gateway-token")
+	if len(accessKey) == 0 {
+		accessKey = r.URL.Query().Get("aiozpinGatewayToken")
+	}
+	requestIp := r.RemoteAddr
+	requestOrigin := r.Header.Get("Origin")
+
+	validateRequest := &ValidateGatewayAccessRequest{
+		GatewayName:   subdomain,
+		CID:           rootCid,
+		RequestIp:     requestIp,
+		RequestOrigin: requestOrigin,
+	}
+	reqAsJson, err := json.Marshal(validateRequest)
+	if err != nil {
+		return false, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, i.pinningApiEndpoint, bytes.NewBuffer(reqAsJson))
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("blockservice-API-Key", base64.StdEncoding.EncodeToString([]byte(i.validateGatewayAccessKey)))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	type AccessResponse struct {
+		Status  string `json:"status"`
+		Message string `json:"message"`
+	}
+	var response AccessResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return false, err
+	}
+	if response.Status == "success" {
+		return true, nil
+	}
+	return false, errors.New(response.Message)
 }
