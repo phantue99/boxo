@@ -349,7 +349,7 @@ func (i *handler) validateGatewayAccess(ctx context.Context, r *http.Request, ro
 		return false, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("blockservice-API-Key", base64.StdEncoding.EncodeToString([]byte(i.validateGatewayAccessKey)))
+	req.Header.Set("blockservice-API-Key", base64.StdEncoding.EncodeToString([]byte(i.blockServiceApiKey)))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return false, err

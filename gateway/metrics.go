@@ -181,14 +181,14 @@ func (b *ipfsBackendWithMetrics) GetDNSLinkRecord(ctx context.Context, fqdn stri
 
 var _ IPFSBackend = (*ipfsBackendWithMetrics)(nil)
 
-func newHandlerWithMetrics(c *Config, backend IPFSBackend, isDedicatedGateway bool, domain string, pinningApiEndpoint string, validateGatewayAccessKey string) *handler {
+func newHandlerWithMetrics(c *Config, backend IPFSBackend, isDedicatedGateway bool, domain string, pinningApiEndpoint string, blockServiceApiKey string) *handler {
 	i := &handler{
-		config:                   c,
-		backend:                  newIPFSBackendWithMetrics(backend),
-		isDedicatedGateway:       isDedicatedGateway,
-		domain:                   domain,
-		pinningApiEndpoint:       pinningApiEndpoint,
-		validateGatewayAccessKey: validateGatewayAccessKey,
+		config:             c,
+		backend:            newIPFSBackendWithMetrics(backend),
+		isDedicatedGateway: isDedicatedGateway,
+		domain:             domain,
+		pinningApiEndpoint: pinningApiEndpoint,
+		blockServiceApiKey: blockServiceApiKey,
 
 		// Response-type specific metrics
 		// ----------------------------

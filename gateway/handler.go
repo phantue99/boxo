@@ -66,12 +66,12 @@ type redirectTemplateData struct {
 // handler is a HTTP handler that serves IPFS objects (accessible by default at /ipfs/<path>)
 // (it serves requests like GET /ipfs/QmVRzPKPzNtSrEzBFm2UZfxmPAgnaLke4DMcerbsGGSaFe/link)
 type handler struct {
-	config                   *Config
-	backend                  IPFSBackend
-	isDedicatedGateway       bool
-	domain                   string
-	pinningApiEndpoint       string
-	validateGatewayAccessKey string
+	config             *Config
+	backend            IPFSBackend
+	isDedicatedGateway bool
+	domain             string
+	pinningApiEndpoint string
+	blockServiceApiKey string
 
 	// response type metrics
 	requestTypeMetric            *prometheus.CounterVec
@@ -92,8 +92,8 @@ type handler struct {
 // of an [IPFS HTTP Gateway] based on a [Config] and [IPFSBackend].
 //
 // [IPFS HTTP Gateway]: https://specs.ipfs.tech/http-gateways/
-func NewHandler(c Config, backend IPFSBackend, isDedicatedGateway bool, domain string, pinningApiEndpoint string, validateGatewayAccessKey string) http.Handler {
-	return newHandlerWithMetrics(&c, backend, isDedicatedGateway, domain, pinningApiEndpoint, validateGatewayAccessKey)
+func NewHandler(c Config, backend IPFSBackend, isDedicatedGateway bool, domain string, pinningApiEndpoint string, blockServiceApiKey string) http.Handler {
+	return newHandlerWithMetrics(&c, backend, isDedicatedGateway, domain, pinningApiEndpoint, blockServiceApiKey)
 }
 
 // serveContent replies to the request using the content in the provided Reader
