@@ -330,12 +330,13 @@ func (i *handler) validateGatewayAccess(ctx context.Context, r *http.Request, ro
 	if len(accessKey) == 0 {
 		accessKey = r.URL.Query().Get("aiozpinGatewayToken")
 	}
-	requestIp := r.RemoteAddr
+	requestIp := strings.Split(r.RemoteAddr, ":")[0] // RemoteAddr is IP:port, this line removes the port
 	requestOrigin := r.Header.Get("Origin")
 
 	validateRequest := &ValidateGatewayAccessRequest{
 		GatewayName:   subdomain,
 		CID:           rootCid,
+		AccessKey:     accessKey,
 		RequestIp:     requestIp,
 		RequestOrigin: requestOrigin,
 	}
