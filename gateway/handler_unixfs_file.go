@@ -332,6 +332,9 @@ func (i *handler) validateGatewayAccess(ctx context.Context, r *http.Request, ro
 	}
 	requestIp := strings.Split(r.RemoteAddr, ":")[0] // RemoteAddr is IP:port, this line removes the port
 	requestOrigin := r.Header.Get("Origin")
+	if len(requestOrigin) == 0 {
+		requestOrigin = r.Header.Get("Referer")
+	}
 
 	validateRequest := &ValidateGatewayAccessRequest{
 		GatewayName:   subdomain,
