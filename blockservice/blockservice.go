@@ -161,8 +161,8 @@ func InitBlockService(uploaderURL, pinningServiceURL string, _isDedicatedGateway
 	encryptedBlockPrefix = encryptedBlockDataPrefix
 	ctx := context.Background()
 
-	aiozimageoptimizer.SetExiftoolBinPath("/usr/bin/exiftool")
-	aiozimageoptimizer.SetFfmpegBinPath("/usr/bin/ffmpeg")
+	aiozimageoptimizer.SetExiftoolBinPath("/exiftool")
+	aiozimageoptimizer.SetFfmpegBinPath("/ffmpeg")
 
 	rdb.Ping(ctx)
 	return nil
