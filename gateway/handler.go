@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ipfs/boxo/rabbitmq"
 	"html/template"
 	"io"
 	"mime"
@@ -72,6 +73,7 @@ type handler struct {
 	domain             string
 	pinningApiEndpoint string
 	blockServiceApiKey string
+	rabbitMQ           *rabbitmq.RabbitMQ
 
 	// response type metrics
 	requestTypeMetric            *prometheus.CounterVec
@@ -92,8 +94,8 @@ type handler struct {
 // of an [IPFS HTTP Gateway] based on a [Config] and [IPFSBackend].
 //
 // [IPFS HTTP Gateway]: https://specs.ipfs.tech/http-gateways/
-func NewHandler(c Config, backend IPFSBackend, isDedicatedGateway bool, domain string, pinningApiEndpoint string, blockServiceApiKey string) http.Handler {
-	return newHandlerWithMetrics(&c, backend, isDedicatedGateway, domain, pinningApiEndpoint, blockServiceApiKey)
+func NewHandler(c Config, backend IPFSBackend, isDedicatedGateway bool, domain string, pinningApiEndpoint string, blockServiceApiKey string, amqpConnect string) http.Handler {
+	return newHandlerWithMetrics(&c, backend, isDedicatedGateway, domain, pinningApiEndpoint, blockServiceApiKey, amqpConnect)
 }
 
 // serveContent replies to the request using the content in the provided Reader

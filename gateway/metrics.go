@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"github.com/ipfs/boxo/rabbitmq"
 	"io"
 	"time"
 
@@ -181,7 +182,15 @@ func (b *ipfsBackendWithMetrics) GetDNSLinkRecord(ctx context.Context, fqdn stri
 
 var _ IPFSBackend = (*ipfsBackendWithMetrics)(nil)
 
-func newHandlerWithMetrics(c *Config, backend IPFSBackend, isDedicatedGateway bool, domain string, pinningApiEndpoint string, blockServiceApiKey string) *handler {
+func newHandlerWithMetrics(
+	c *Config,
+	backend IPFSBackend,
+	isDedicatedGateway bool,
+	domain string,
+	pinningApiEndpoint string,
+	blockServiceApiKey string,
+	amqpConnect string,
+) *handler {
 	i := &handler{
 		config:             c,
 		backend:            newIPFSBackendWithMetrics(backend),
@@ -189,6 +198,7 @@ func newHandlerWithMetrics(c *Config, backend IPFSBackend, isDedicatedGateway bo
 		domain:             domain,
 		pinningApiEndpoint: pinningApiEndpoint,
 		blockServiceApiKey: blockServiceApiKey,
+		rabbitMQ:           rabbitmq.InitializeRabbitMQ(amqpConnect, "bandwidth"),
 
 		// Response-type specific metrics
 		// ----------------------------

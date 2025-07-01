@@ -29,7 +29,6 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/redis/go-redis/v9"
-	"github.com/shopspring/decimal"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
@@ -617,10 +616,6 @@ func getBlock(ctx context.Context, c cid.Cid, bs blockstore.Blockstore, allowlis
 			}
 		}
 
-		if err := addBandwidthUsage(isDedicatedGateway, f.Size, hash); err != nil {
-			fmt.Printf("Failed to add bandwidth usage: %v", err)
-		}
-
 		return blocks.NewBlockWithCid(bdata, c)
 	} else {
 		fmt.Printf("Hash not found %s, Failed to get data %v \n", c.Hash().HexString(), err)
@@ -645,33 +640,6 @@ func getBlock(ctx context.Context, c cid.Cid, bs blockstore.Blockstore, allowlis
 
 	logger.Debug("BlockService GetBlock: Not found")
 	return nil, err
-}
-
-func addBandwidthUsage(isPrivate bool, fileSize uint64, hash string) error {
-	// reqBody, _ := json.Marshal(map[string]interface{}{
-	// 	"is_private": isPrivate,
-	// 	"amount":     fileSize,
-	// 	"cid":        hash,
-	// })
-
-	type AddBandwidthRequest struct {
-		IsPrivate bool            `json:"is_private"`
-		CID       string          `json:"cid" binding:"required"`
-		Amount    decimal.Decimal `gorm:"type:numeric" json:"amount" binding:"required"`
-	}
-
-	addBandwidthRequest := AddBandwidthRequest{
-		IsPrivate: isPrivate,
-		CID:       hash,
-		Amount:    decimal.NewFromUint64(fileSize),
-	}
-
-	if err := rabbitMQ.Publish(addBandwidthRequest); err != nil {
-		log.Printf("Failed to publish message: %v", err)
-		return err
-	}
-
-	return nil
 }
 
 // GetBlocks gets a list of blocks asynchronously and returns through
