@@ -54,7 +54,7 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 	}
 
 	var content io.Reader = fileBytes
-	var size uint64
+	size := uint64(fileSize)
 	// Calculate deterministic value for Content-Type HTTP header
 	// (we prefer to do it here, rather than using implicit sniffing in http.ServeContent)
 	var ctype string
