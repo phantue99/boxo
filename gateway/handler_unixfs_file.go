@@ -54,6 +54,7 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 	}
 
 	var content io.Reader = fileBytes
+	var size uint64
 	// Calculate deterministic value for Content-Type HTTP header
 	// (we prefer to do it here, rather than using implicit sniffing in http.ServeContent)
 	var ctype string
@@ -276,16 +277,17 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 			}
 			optimizerOpts.PreserveAnimation = animated == "true"
 			optimizer := aiozimageoptimizer.OptimizerFromMimeType(ctype)
-			content, err = optimizer.Optimize(content, optimizerOpts)
+			content, size, err = optimizer.Optimize(content, optimizerOpts)
 			if err != nil {
 				errMessage = fmt.Sprintf("error optimizing content: %s", err.Error())
 				code = http.StatusInternalServerError
 				return false
 			}
-
 			if optimizerOpts.ShouldTransformToWebp {
 				ctype = "image/webp"
 			}
+			w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
+			w.Header().Set("Content-Type", "image/webp")
 		}
 		// Strip the encoding from the HTML Content-Type header and let the
 		// browser figure it out.
@@ -303,13 +305,13 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 
 	// ServeContent will take care of
 	// If-None-Match+Etag, Content-Length and range requests
-	_, dataSent, _ := serveContent(w, r, modtime, fileSize, limitReader)
+	_, dataSent, _ := serveContent(w, r, modtime, int64(size), limitReader)
 
 	// Was response successful?
 	if dataSent {
 		// Update metrics
 		i.unixfsFileGetMetric.WithLabelValues(contentPath.Namespace()).Observe(time.Since(begin).Seconds())
-		i.addBandwidthUsage(r, resolvedPath.RootCid().String(), uint64(fileSize))
+		i.addBandwidthUsage(r, resolvedPath.RootCid().String(), size)
 	}
 
 	return dataSent
