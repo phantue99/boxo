@@ -764,10 +764,6 @@ func getBlockCdn(ctx context.Context, c cid.Cid, allowlist verifcid.Allowlist) (
 	}
 	hash := c.Hash().HexString()
 
-	if err := addBandwidthUsage(isDedicatedGateway, f.Size, hash); err != nil {
-		fmt.Printf("Failed to add bandwidth usage: %v", err)
-	}
-
 	bdata, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
