@@ -45,7 +45,7 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 		return false
 	}
 
-	if err := i.checkHashStatus(ctx, r, resolvedPath.RootCid().String()); err != nil {
+	if err := i.checkHashStatus(ctx, r, resolvedPath.RootCid().Hash().String()); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return false
 	}
