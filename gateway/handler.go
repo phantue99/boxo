@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ipfs/boxo/rabbitmq"
+	"golang.org/x/time/rate"
 	"html/template"
 	"io"
 	"mime"
@@ -15,6 +16,7 @@ import (
 	"regexp"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ipfs/boxo/gateway/assets"
@@ -67,6 +69,8 @@ type redirectTemplateData struct {
 // handler is a HTTP handler that serves IPFS objects (accessible by default at /ipfs/<path>)
 // (it serves requests like GET /ipfs/QmVRzPKPzNtSrEzBFm2UZfxmPAgnaLke4DMcerbsGGSaFe/link)
 type handler struct {
+	lock *sync.Mutex
+
 	config             *Config
 	backend            IPFSBackend
 	isDedicatedGateway bool
@@ -74,6 +78,10 @@ type handler struct {
 	pinningApiEndpoint string
 	blockServiceApiKey string
 	rabbitMQ           *rabbitmq.RabbitMQ
+
+	// rate limiters
+	ipLimiter  map[string]*rate.Limiter
+	cidLimiter map[string]*rate.Limiter
 
 	// response type metrics
 	requestTypeMetric            *prometheus.CounterVec

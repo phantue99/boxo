@@ -3,11 +3,8 @@ package gateway
 import (
 	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	aiozimageoptimizer "github.com/lamgiahungaioz/aioz-image-optimizer"
-	"github.com/shopspring/decimal"
 	"io"
 	"mime"
 	"net/http"
@@ -50,6 +47,17 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 	}
 	if !valid {
 		http.Error(w, fmt.Sprintf("Gateway access denied for %s", resolvedPath.RootCid()), http.StatusForbidden)
+		return false
+	}
+
+	requestIp := strings.Split(r.RemoteAddr, ":")[0] // RemoteAddr is IP:port, this line removes the port
+	if err := i.checkRateLimit(isPremium, resolvedPath.RootCid().String(), requestIp); err != nil {
+		http.Error(w, err.Error(), http.StatusTooManyRequests)
+		return false
+	}
+
+	if err := i.checkDmca(ctx, r, resolvedPath.RootCid().String()); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return false
 	}
 
@@ -318,86 +326,4 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 	}
 
 	return dataSent
-}
-
-func (i *handler) validateGatewayAccess(ctx context.Context, r *http.Request, rootCid string) (bool, bool, error) {
-	type ValidateGatewayAccessRequest struct {
-		GatewayName   string `json:"gatewayName"`
-		CID           string `json:"cid"`
-		AccessKey     string `json:"accessKey"`
-		RequestIp     string `json:"ip"`
-		RequestOrigin string `json:"origin"`
-	}
-	// api.example.com, domain: example.com => subdomain 'api'
-	subdomain := strings.TrimSuffix(r.Host, fmt.Sprintf(".%s", i.domain))
-	// access-key can be from header or url query
-	accessKey := r.Header.Get("x-aiozpin-gateway-token")
-	if len(accessKey) == 0 {
-		accessKey = r.URL.Query().Get("aiozpinGatewayToken")
-	}
-	requestIp := strings.Split(r.RemoteAddr, ":")[0] // RemoteAddr is IP:port, this line removes the port
-	requestOrigin := r.Header.Get("Origin")
-	if len(requestOrigin) == 0 {
-		requestOrigin = r.Header.Get("Referer")
-	}
-
-	validateRequest := &ValidateGatewayAccessRequest{
-		GatewayName:   subdomain,
-		CID:           rootCid,
-		AccessKey:     accessKey,
-		RequestIp:     requestIp,
-		RequestOrigin: requestOrigin,
-	}
-	reqAsJson, err := json.Marshal(validateRequest)
-	if err != nil {
-		return false, false, err
-	}
-	validateEndpoint := fmt.Sprintf("%s/api/gatewayAccessControlRules/validate", i.pinningApiEndpoint)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, validateEndpoint, bytes.NewBuffer(reqAsJson))
-	if err != nil {
-		return false, false, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("blockservice-API-Key", i.blockServiceApiKey)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return false, false, err
-	}
-	defer resp.Body.Close()
-	type AccessResponse struct {
-		Data struct {
-			Valid     bool `json:"valid"`
-			IsPremium bool `json:"isPremium"`
-		} `json:"data"`
-		Status  string `json:"status"`
-		Message string `json:"message"`
-	}
-	var response AccessResponse
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return false, false, err
-	}
-	if response.Status == "success" {
-		return response.Data.Valid, response.Data.IsPremium, nil
-	}
-	return false, false, errors.New(response.Message)
-}
-
-func (i *handler) addBandwidthUsage(r *http.Request, rootCid string, fileSize uint64) {
-	type AddBandwidthRequest struct {
-		CID     string          `json:"cid" binding:"required"`
-		Gateway string          `json:"gateway" binding:"required"`
-		Amount  decimal.Decimal `gorm:"type:numeric" json:"amount" binding:"required"`
-	}
-
-	// api.example.com, domain: example.com => subdomain 'api'
-	subdomain := strings.TrimSuffix(r.Host, fmt.Sprintf(".%s", i.domain))
-	addBandwidthRequest := AddBandwidthRequest{
-		CID:     rootCid,
-		Amount:  decimal.NewFromUint64(fileSize),
-		Gateway: subdomain,
-	}
-
-	if err := i.rabbitMQ.Publish(addBandwidthRequest); err != nil {
-		log.Errorf("failed to publish AddBandwidthRequest: %s", err.Error())
-	}
 }

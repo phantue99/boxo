@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"github.com/ipfs/boxo/rabbitmq"
+	"golang.org/x/time/rate"
 	"io"
+	"sync"
 	"time"
 
 	"github.com/ipfs/boxo/files"
@@ -192,6 +194,8 @@ func newHandlerWithMetrics(
 	amqpConnect string,
 ) *handler {
 	i := &handler{
+		lock: new(sync.Mutex),
+
 		config:             c,
 		backend:            newIPFSBackendWithMetrics(backend),
 		isDedicatedGateway: isDedicatedGateway,
@@ -199,6 +203,8 @@ func newHandlerWithMetrics(
 		pinningApiEndpoint: pinningApiEndpoint,
 		blockServiceApiKey: blockServiceApiKey,
 		rabbitMQ:           rabbitmq.InitializeRabbitMQ(amqpConnect, "bandwidth"),
+		ipLimiter:          make(map[string]*rate.Limiter),
+		cidLimiter:         make(map[string]*rate.Limiter),
 
 		// Response-type specific metrics
 		// ----------------------------
