@@ -40,6 +40,16 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 		return true
 	}
 
+	if err := i.checkDmca(ctx, resolvedPath.RootCid().String()); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return false
+	}
+
+	if err := i.checkHashStatus(ctx, r, resolvedPath.RootCid().String()); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return false
+	}
+
 	valid, isPremium, err := i.validateGatewayAccess(ctx, r, resolvedPath.RootCid().String())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -53,11 +63,6 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 	requestIp := strings.Split(r.RemoteAddr, ":")[0] // RemoteAddr is IP:port, this line removes the port
 	if err := i.checkRateLimit(isPremium, resolvedPath.RootCid().String(), requestIp); err != nil {
 		http.Error(w, err.Error(), http.StatusTooManyRequests)
-		return false
-	}
-
-	if err := i.checkDmca(ctx, r, resolvedPath.RootCid().String()); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
 		return false
 	}
 

@@ -13,30 +13,19 @@ import (
 	"time"
 )
 
-// var ipLimiters = make(map[string]*rate.Limiter)
-// var cidLimiters = make(map[string]*rate.Limiter)
-
-//ipLimiter := getLimiter(r.RemoteAddr, ipLimiters, 100)
-//cidLimiter := getLimiter(cid.String(), cidLimiters, 15)
-
-func (i *handler) checkDmca(ctx context.Context, r *http.Request, rootCid string) error {
-	type GetHashStatusRequest struct {
-		Hash      string `json:"hash"`
-		Subdomain string `json:"subdomain"`
+func (i *handler) checkDmca(ctx context.Context, cid string) error {
+	type CheckDmcaRequest struct {
+		Hash string `json:"hash"`
 	}
-	// api.example.com, domain: example.com => subdomain 'api'
-	subdomain := strings.TrimSuffix(r.Host, fmt.Sprintf(".%s", i.domain))
-
-	checkDmcaRequest := &GetHashStatusRequest{
-		Hash:      rootCid,
-		Subdomain: subdomain,
+	checkDmcaRequest := &CheckDmcaRequest{
+		Hash: cid,
 	}
 	payload, err := json.Marshal(checkDmcaRequest)
 	if err != nil {
 		return err
 	}
-	checkDmcaEndpoint := fmt.Sprintf("%s/api/subdomain/hash/check", i.pinningApiEndpoint)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, checkDmcaEndpoint, bytes.NewBuffer(payload))
+	checkDmcaEndpoint := fmt.Sprintf("%s/api/content/dmca/check", i.pinningApiEndpoint)
+	req, err := http.NewRequestWithContext(ctx, "POST", checkDmcaEndpoint, bytes.NewBuffer(payload))
 	if err != nil {
 		return err
 	}
@@ -55,6 +44,48 @@ func (i *handler) checkDmca(ctx context.Context, r *http.Request, rootCid string
 		Message string `json:"message"`
 	}
 	var response CheckDmcaResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return err
+	}
+	return errors.New(response.Message)
+}
+
+func (i *handler) checkHashStatus(ctx context.Context, r *http.Request, rootCid string) error {
+	type GetHashStatusRequest struct {
+		Hash      string `json:"hash"`
+		Subdomain string `json:"subdomain"`
+	}
+	// api.example.com, domain: example.com => subdomain 'api'
+	subdomain := strings.TrimSuffix(r.Host, fmt.Sprintf(".%s", i.domain))
+
+	checkHashStatusRequest := &GetHashStatusRequest{
+		Hash:      rootCid,
+		Subdomain: subdomain,
+	}
+	payload, err := json.Marshal(checkHashStatusRequest)
+	if err != nil {
+		return err
+	}
+	checkHashStatusEndpoint := fmt.Sprintf("%s/api/content/hash/check", i.pinningApiEndpoint)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, checkHashStatusEndpoint, bytes.NewBuffer(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("blockservice-API-Key", i.blockServiceApiKey)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		return nil
+	}
+	type GetHashStatusResponse struct {
+		Status  string `json:"status"`
+		Message string `json:"message"`
+	}
+	var response GetHashStatusResponse
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return err
 	}
