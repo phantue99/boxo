@@ -154,19 +154,21 @@ func (i *handler) validateGatewayAccess(ctx context.Context, r *http.Request, ro
 	return false, false, errors.New(response.Message)
 }
 
-func (i *handler) addBandwidthUsage(r *http.Request, rootCid string, fileSize uint64) {
+func (i *handler) addBandwidthUsage(r *http.Request, rootCid string, fileSize uint64, isPremium bool) {
 	type AddBandwidthRequest struct {
-		CID     string          `json:"cid" binding:"required"`
-		Gateway string          `json:"gateway" binding:"required"`
-		Amount  decimal.Decimal `gorm:"type:numeric" json:"amount" binding:"required"`
+		CID       string          `json:"cid" binding:"required"`
+		Gateway   string          `json:"gateway" binding:"required"`
+		Amount    decimal.Decimal `gorm:"type:numeric" json:"amount" binding:"required"`
+		IsPremium bool            `json:"isPremium" binding:"required"`
 	}
 
 	// api.example.com, domain: example.com => subdomain 'api'
 	subdomain := strings.TrimSuffix(r.Host, fmt.Sprintf(".%s", i.domain))
 	addBandwidthRequest := AddBandwidthRequest{
-		CID:     rootCid,
-		Amount:  decimal.NewFromUint64(fileSize),
-		Gateway: subdomain,
+		CID:       rootCid,
+		Amount:    decimal.NewFromUint64(fileSize),
+		Gateway:   subdomain,
+		IsPremium: isPremium,
 	}
 
 	if err := i.rabbitMQ.Publish(addBandwidthRequest); err != nil {

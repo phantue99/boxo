@@ -327,7 +327,7 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 	if dataSent {
 		// Update metrics
 		i.unixfsFileGetMetric.WithLabelValues(contentPath.Namespace()).Observe(time.Since(begin).Seconds())
-		i.addBandwidthUsage(r, resolvedPath.RootCid().String(), size)
+		i.addBandwidthUsage(r, resolvedPath.RootCid().String(), size, isPremium)
 	}
 
 	return dataSent
