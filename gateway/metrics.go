@@ -196,15 +196,16 @@ func newHandlerWithMetrics(
 	i := &handler{
 		lock: new(sync.Mutex),
 
-		config:             c,
-		backend:            newIPFSBackendWithMetrics(backend),
-		isDedicatedGateway: isDedicatedGateway,
-		domain:             domain,
-		pinningApiEndpoint: pinningApiEndpoint,
-		blockServiceApiKey: blockServiceApiKey,
-		rabbitMQ:           rabbitmq.InitializeRabbitMQ(amqpConnect, "bandwidth"),
-		ipLimiter:          make(map[string]*rate.Limiter),
-		cidLimiter:         make(map[string]*rate.Limiter),
+		config:                      c,
+		backend:                     newIPFSBackendWithMetrics(backend),
+		isDedicatedGateway:          isDedicatedGateway,
+		domain:                      domain,
+		pinningApiEndpoint:          pinningApiEndpoint,
+		blockServiceApiKey:          blockServiceApiKey,
+		rabbitMQ:                    rabbitmq.InitializeRabbitMQ(amqpConnect, "bandwidth"),
+		fileDownloadRequestRabbitMQ: rabbitmq.InitializeRabbitMQ(amqpConnect, "file_download"),
+		ipLimiter:                   make(map[string]*rate.Limiter),
+		cidLimiter:                  make(map[string]*rate.Limiter),
 
 		// Response-type specific metrics
 		// ----------------------------

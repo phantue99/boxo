@@ -37,25 +37,30 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 		// TODO: remove this if clause once https://github.com/golang/go/issues/54794 is fixed in two latest releases of go
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusOK)
+		i.addFileDownloadRequest(r, resolvedPath.RootCid().String(), 0, false, true)
 		return true
 	}
 
 	if err := i.checkDmca(ctx, resolvedPath.RootCid().String()); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		i.addFileDownloadRequest(r, resolvedPath.RootCid().String(), uint64(fileSize), false, false)
 		return false
 	}
 
 	if err := i.checkHashStatus(ctx, r, resolvedPath.RootCid().Hash().String()); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		i.addFileDownloadRequest(r, resolvedPath.RootCid().String(), uint64(fileSize), false, false)
 		return false
 	}
 
 	valid, isPremium, err := i.validateGatewayAccess(ctx, r, resolvedPath.RootCid().String())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		i.addFileDownloadRequest(r, resolvedPath.RootCid().String(), uint64(fileSize), false, false)
 		return false
 	}
 	if !valid {
+		i.addFileDownloadRequest(r, resolvedPath.RootCid().String(), uint64(fileSize), isPremium, false)
 		http.Error(w, fmt.Sprintf("Gateway access denied for %s", resolvedPath.RootCid()), http.StatusForbidden)
 		return false
 	}
@@ -63,6 +68,7 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 	requestIp := strings.Split(r.RemoteAddr, ":")[0] // RemoteAddr is IP:port, this line removes the port
 	if err := i.checkRateLimit(isPremium, resolvedPath.RootCid().String(), requestIp); err != nil {
 		http.Error(w, err.Error(), http.StatusTooManyRequests)
+		i.addFileDownloadRequest(r, resolvedPath.RootCid().String(), uint64(fileSize), isPremium, false)
 		return false
 	}
 
@@ -139,6 +145,7 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 					http.Redirect(w, r, urlWithoutQuery, http.StatusPermanentRedirect)
 					return
 				}
+				i.addFileDownloadRequest(r, resolvedPath.RootCid().String(), size, isPremium, false)
 				http.Error(w, errMessage, code)
 			}()
 			if animated != "" && animated != "true" && animated != "false" {
@@ -328,6 +335,9 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 		// Update metrics
 		i.unixfsFileGetMetric.WithLabelValues(contentPath.Namespace()).Observe(time.Since(begin).Seconds())
 		i.addBandwidthUsage(r, resolvedPath.RootCid().String(), size, isPremium)
+		i.addFileDownloadRequest(r, resolvedPath.RootCid().String(), size, isPremium, true)
+	} else {
+		i.addFileDownloadRequest(r, resolvedPath.RootCid().String(), size, isPremium, false)
 	}
 
 	return dataSent

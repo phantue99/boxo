@@ -71,13 +71,14 @@ type redirectTemplateData struct {
 type handler struct {
 	lock *sync.Mutex
 
-	config             *Config
-	backend            IPFSBackend
-	isDedicatedGateway bool
-	domain             string
-	pinningApiEndpoint string
-	blockServiceApiKey string
-	rabbitMQ           *rabbitmq.RabbitMQ
+	config                      *Config
+	backend                     IPFSBackend
+	isDedicatedGateway          bool
+	domain                      string
+	pinningApiEndpoint          string
+	blockServiceApiKey          string
+	rabbitMQ                    *rabbitmq.RabbitMQ
+	fileDownloadRequestRabbitMQ *rabbitmq.RabbitMQ
 
 	// rate limiters
 	ipLimiter  map[string]*rate.Limiter

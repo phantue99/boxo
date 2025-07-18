@@ -154,6 +154,30 @@ func (i *handler) validateGatewayAccess(ctx context.Context, r *http.Request, ro
 	return false, false, errors.New(response.Message)
 }
 
+func (i *handler) addFileDownloadRequest(r *http.Request, rootCid string, fileSize uint64, isPremium bool, isSuccess bool) {
+	type AddFileDownloadRequest struct {
+		CID       string    `json:"cid"`
+		Gateway   string    `json:"gateway"`
+		Success   bool      `json:"success"`
+		FileSize  uint64    `json:"file_size"`
+		IsPremium bool      `json:"is_premium"`
+		Timestamp time.Time `json:"timestamp"`
+	}
+	subdomain := strings.TrimSuffix(r.Host, fmt.Sprintf(".%s", i.domain))
+	addFileDownloadRequest := &AddFileDownloadRequest{
+		CID:       rootCid,
+		Gateway:   subdomain,
+		Success:   isSuccess,
+		FileSize:  fileSize,
+		IsPremium: isPremium,
+		Timestamp: time.Now(),
+	}
+
+	if err := i.fileDownloadRequestRabbitMQ.Publish(addFileDownloadRequest); err != nil {
+		log.Errorf("Failed to publish AddFileDownloadRequest: %v", err)
+	}
+}
+
 func (i *handler) addBandwidthUsage(r *http.Request, rootCid string, fileSize uint64, isPremium bool) {
 	type AddBandwidthRequest struct {
 		CID       string          `json:"cid" binding:"required"`
