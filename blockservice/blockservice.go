@@ -283,8 +283,8 @@ func addBlock(ctx context.Context, o blocks.Block, allowlist verifcid.Allowlist)
 		err          error
 	)
 
-	var f *fileInfo
-	if err := getKey(ctx, hash, &f); err != nil && f != nil {
+	var f fileInfo
+	if err := getKey(ctx, hash, &f); err != nil && f.FileRecordID != "" {
 		return nil
 	}
 
@@ -514,8 +514,8 @@ func getBlock(ctx context.Context, c cid.Cid, bs blockstore.Blockstore, allowlis
 		return nil, err
 	}
 
-	var f *fileInfo
-	if err := getKey(ctx, c.Hash().HexString(), &f); err == nil && f != nil {
+	var f fileInfo
+	if err := getKey(ctx, c.Hash().HexString(), &f); err == nil && f.FileRecordID != "" {
 		endpoint, err := url.Parse(fmt.Sprintf("%s/cacheFile/%s", uploader, f.FileRecordID))
 		if err != nil {
 			return nil, err
