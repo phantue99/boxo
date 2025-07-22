@@ -454,8 +454,8 @@ func addBlocks(ctx context.Context, bs []blocks.Block, allowlist verifcid.Allowl
 		if hash == defaultChunkHash {
 			continue
 		}
-		var _ignore any
-		if err := getKey(ctx, hash, &_ignore); err == nil {
+		var _existenceCheck any
+		if err := getKey(ctx, hash, &_existenceCheck); err == nil && _existenceCheck != nil {
 			continue
 		} else {
 			toput = append(toput, b)
