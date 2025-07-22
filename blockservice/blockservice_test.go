@@ -7,7 +7,11 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
+	"net/http"
 	"testing"
 
 	blockstore "github.com/ipfs/boxo/blockstore"
@@ -326,4 +330,72 @@ func TestEncryptDecrypt(t *testing.T) {
 	if !bytes.Equal(plain, plainText) {
 		t.Fatal("decryption failed")
 	}
+}
+
+func TestSetKey(t *testing.T) {
+	err := setKeyTest(context.Background(), "xxx", map[string]string{"pleh": "Hello"}, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var x any
+	err = getKeyTest(context.Background(), "xxx", &x)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log(x)
+}
+
+func setKeyTest(ctx context.Context, key string, value any, expiration int64) error {
+	type SetKeyRequest struct {
+		Key        string      `json:"key"`
+		Value      interface{} `json:"value"`
+		Expiration int64       `json:"expiration"`
+	}
+
+	setKeyEndpoint := fmt.Sprintf("%s/api/key-val", "http://localhost:8001")
+	reqData, err := json.Marshal(SetKeyRequest{key, value, expiration})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, setKeyEndpoint, bytes.NewBuffer(reqData))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("blockservice-API-Key", "TXloRFFBUnVoRHNOVlBodEZxTXdNSkJYWXlEdWROM2VvQXNWSnZpTEFFZUNDcVIwOFUzZW9QV3hsMW9rOFA2Wg==")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("set key failed: %s", resp.Status)
+	}
+	return nil
+}
+
+func getKeyTest(ctx context.Context, key string, out interface{}) error {
+	getKeyEndpoint := fmt.Sprintf("%s/api/key-val?key=%s", "http://localhost:8001", key)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, getKeyEndpoint, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("blockservice-API-Key", "TXloRFFBUnVoRHNOVlBodEZxTXdNSkJYWXlEdWROM2VvQXNWSnZpTEFFZUNDcVIwOFUzZW9QV3hsMW9rOFA2Wg==")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		type errResponse struct {
+			Error string `json:"error"`
+		}
+		var errResp errResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errResp); err != nil {
+			return err
+		}
+		return errors.New(errResp.Error)
+	}
+	return json.NewDecoder(resp.Body).Decode(out)
 }

@@ -28,7 +28,6 @@ import (
 	"github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
@@ -125,14 +124,14 @@ var (
 	pinningService       string
 	isDedicatedGateway   bool
 	maxSize              = 100 * 1024 * 1024 // 100MB
-	rdb                  *redis.Client
 	rabbitMQ             *rabbitmq.RabbitMQ
 	defaultChunkHash     = "122059948439065f29619ef41280cbb932be52c56d99c5966b65e0111239f098bbef"
 	blockEncryptionKey   string
 	encryptedBlockPrefix string
+	blockServiceApiKey   string
 )
 
-func InitBlockService(uploaderURL, pinningServiceURL string, _isDedicatedGateway bool, addr string, amqpConnect string, encryptionKey string, encryptedBlockDataPrefix string) error {
+func InitBlockService(uploaderURL, pinningServiceURL string, _isDedicatedGateway bool, blockServiceKey string, amqpConnect string, encryptionKey string, encryptedBlockDataPrefix string) error {
 	if uploaderURL != "" {
 		uploader = uploaderURL
 	}
@@ -149,21 +148,14 @@ func InitBlockService(uploaderURL, pinningServiceURL string, _isDedicatedGateway
 	// 	Addrs: addrs,
 	// })
 
-	rdb = redis.NewClient(&redis.Options{
-		Addr:     addr,
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
-
 	rabbitMQ = rabbitmq.InitializeRabbitMQ(amqpConnect, "bandwidth")
 	blockEncryptionKey = encryptionKey
 	encryptedBlockPrefix = encryptedBlockDataPrefix
-	ctx := context.Background()
+	blockServiceApiKey = blockServiceKey
 
 	aiozimageoptimizer.SetExiftoolBinPath("/usr/bin/exiftool")
 	aiozimageoptimizer.SetFfmpegBinPath("/usr/bin/ffmpeg")
 
-	rdb.Ping(ctx)
 	return nil
 }
 
@@ -289,18 +281,11 @@ func addBlock(ctx context.Context, o blocks.Block, allowlist verifcid.Allowlist)
 		fileRecordID string
 		files        []File
 		err          error
-		data         []byte
 	)
 
-	data, err = rdb.Get(ctx, hash).Bytes()
-	if err == nil {
-		var f fileInfo
-
-		if err := json.Unmarshal(data, &f); err != nil {
-			return nil
-		}
-	} else if !errors.Is(err, redis.Nil) {
-		return err
+	var f fileInfo
+	if err := getKey(ctx, hash, &f); err != nil {
+		return nil
 	}
 
 	fileRecordID, files, err = uploadFiles([]blocks.Block{o})
@@ -311,14 +296,9 @@ func addBlock(ctx context.Context, o blocks.Block, allowlist verifcid.Allowlist)
 	for _, f := range files {
 		if strings.Contains(f.Name, hash) {
 			fInfo := fileInfo{fileRecordID, f.CompressedSize64, f.Offset}
-			fInfoBytes, err := json.Marshal(fInfo)
-			if err != nil {
+			if err := setKey(ctx, hash, fInfo, -1); err != nil {
 				return err
 			}
-			if statusCmd := rdb.Set(ctx, hash, fInfoBytes, 0); statusCmd.Err() != nil {
-				return statusCmd.Err()
-			}
-			break
 		}
 	}
 
@@ -474,7 +454,8 @@ func addBlocks(ctx context.Context, bs []blocks.Block, allowlist verifcid.Allowl
 		if hash == defaultChunkHash {
 			continue
 		}
-		if err := rdb.Get(ctx, hash).Err(); err == nil {
+		var _ignore any
+		if err := getKey(ctx, hash, &_ignore); err == nil {
 			continue
 		} else {
 			toput = append(toput, b)
@@ -500,12 +481,8 @@ func addBlocks(ctx context.Context, bs []blocks.Block, allowlist verifcid.Allowl
 			hash := b.Cid().Hash().HexString()
 			if strings.Contains(f.Name, hash) {
 				fInfo := fileInfo{fileRecordID, f.CompressedSize64, f.Offset}
-				fInfoBytes, err := json.Marshal(fInfo)
-				if err != nil {
+				if err := setKey(ctx, hash, fInfo, -1); err != nil {
 					return nil, err
-				}
-				if statusCmd := rdb.Set(ctx, hash, fInfoBytes, 0); statusCmd.Err() != nil {
-					return nil, statusCmd.Err()
 				}
 			}
 		}
@@ -537,15 +514,8 @@ func getBlock(ctx context.Context, c cid.Cid, bs blockstore.Blockstore, allowlis
 		return nil, err
 	}
 
-	kv, err := rdb.Get(ctx, c.Hash().HexString()).Bytes()
-
-	if err == nil {
-		var f fileInfo
-
-		if err := json.Unmarshal(kv, &f); err != nil {
-			return nil, err
-		}
-
+	var f fileInfo
+	if err := getKey(ctx, c.Hash().HexString(), &f); err == nil {
 		endpoint, err := url.Parse(fmt.Sprintf("%s/cacheFile/%s", uploader, f.FileRecordID))
 		if err != nil {
 			return nil, err
@@ -737,14 +707,8 @@ func getBlocks(ctx context.Context, ks []cid.Cid, bs blockstore.Blockstore, allo
 }
 
 func getBlockCdn(ctx context.Context, c cid.Cid, allowlist verifcid.Allowlist) (blocks.Block, error) {
-	kv, err := rdb.Get(ctx, c.Hash().HexString()).Bytes()
-	if err != nil {
-		return nil, err
-	}
-
 	var f fileInfo
-	err = json.Unmarshal(kv, &f)
-	if err != nil {
+	if err := getKey(ctx, c.Hash().String(), &f); err != nil {
 		return nil, err
 	}
 
@@ -919,3 +883,58 @@ func (s *Session) GetBlocks(ctx context.Context, ks []cid.Cid) <-chan blocks.Blo
 }
 
 var _ BlockGetter = (*Session)(nil)
+
+func getKey(ctx context.Context, key string, out interface{}) error {
+	getKeyEndpoint := fmt.Sprintf("%s/api/key-val?key=%s", pinningService, key)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, getKeyEndpoint, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("blockservice-API-Key", blockServiceApiKey)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		type errResponse struct {
+			Error string `json:"error"`
+		}
+		var errResp errResponse
+		if err := json.NewDecoder(resp.Body).Decode(&errResp); err != nil {
+			return err
+		}
+		return errors.New(errResp.Error)
+	}
+	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+func setKey(ctx context.Context, key string, value any, expiration int64) error {
+	type SetKeyRequest struct {
+		Key        string      `json:"key"`
+		Value      interface{} `json:"value"`
+		Expiration int64       `json:"expiration"`
+	}
+
+	setKeyEndpoint := fmt.Sprintf("%s/api/key-val", pinningService)
+	reqData, err := json.Marshal(SetKeyRequest{key, value, expiration})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, setKeyEndpoint, bytes.NewBuffer(reqData))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("blockservice-API-Key", blockServiceApiKey)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("set key failed: %s", resp.Status)
+	}
+	return nil
+}
