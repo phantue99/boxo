@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"github.com/ipfs/boxo/rabbitmq"
 	"io"
 	"time"
 
@@ -181,11 +182,12 @@ func (b *ipfsBackendWithMetrics) GetDNSLinkRecord(ctx context.Context, fqdn stri
 
 var _ IPFSBackend = (*ipfsBackendWithMetrics)(nil)
 
-func newHandlerWithMetrics(c *Config, backend IPFSBackend, isDedicatedGateway bool) *handler {
+func newHandlerWithMetrics(c *Config, backend IPFSBackend, isDedicatedGateway bool, amqpConnect string) *handler {
 	i := &handler{
-		config:             c,
-		backend:            newIPFSBackendWithMetrics(backend),
-		isDedicatedGateway: isDedicatedGateway,
+		config:                      c,
+		backend:                     newIPFSBackendWithMetrics(backend),
+		isDedicatedGateway:          isDedicatedGateway,
+		fileDownloadRequestRabbitMQ: rabbitmq.InitializeRabbitMQ(amqpConnect, "file_download"),
 
 		// Response-type specific metrics
 		// ----------------------------

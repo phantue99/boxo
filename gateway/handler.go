@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ipfs/boxo/rabbitmq"
 	"html/template"
 	"io"
 	"mime"
@@ -66,9 +67,10 @@ type redirectTemplateData struct {
 // handler is a HTTP handler that serves IPFS objects (accessible by default at /ipfs/<path>)
 // (it serves requests like GET /ipfs/QmVRzPKPzNtSrEzBFm2UZfxmPAgnaLke4DMcerbsGGSaFe/link)
 type handler struct {
-	config             *Config
-	backend            IPFSBackend
-	isDedicatedGateway bool
+	config                      *Config
+	backend                     IPFSBackend
+	isDedicatedGateway          bool
+	fileDownloadRequestRabbitMQ *rabbitmq.RabbitMQ
 
 	// response type metrics
 	requestTypeMetric            *prometheus.CounterVec
@@ -89,8 +91,8 @@ type handler struct {
 // of an [IPFS HTTP Gateway] based on a [Config] and [IPFSBackend].
 //
 // [IPFS HTTP Gateway]: https://specs.ipfs.tech/http-gateways/
-func NewHandler(c Config, backend IPFSBackend, isDedicatedGateway bool) http.Handler {
-	return newHandlerWithMetrics(&c, backend, isDedicatedGateway)
+func NewHandler(c Config, backend IPFSBackend, isDedicatedGateway bool, amqpConnect string) http.Handler {
+	return newHandlerWithMetrics(&c, backend, isDedicatedGateway, amqpConnect)
 }
 
 // serveContent replies to the request using the content in the provided Reader

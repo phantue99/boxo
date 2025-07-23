@@ -104,6 +104,7 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 					http.Redirect(w, r, urlWithoutQuery, http.StatusPermanentRedirect)
 					return
 				}
+				i.addFileDownloadRequest(resolvedPath.RootCid().String(), false, fileSize)
 				http.Error(w, errMessage, code)
 			}()
 			if animated != "" && animated != "true" && animated != "false" {
@@ -246,7 +247,30 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 	if dataSent {
 		// Update metrics
 		i.unixfsFileGetMetric.WithLabelValues(contentPath.Namespace()).Observe(time.Since(begin).Seconds())
+		i.addFileDownloadRequest(resolvedPath.RootCid().String(), true, fileSize)
+	} else {
+		i.addFileDownloadRequest(resolvedPath.RootCid().String(), false, fileSize)
 	}
 
 	return dataSent
+}
+
+func (i *handler) addFileDownloadRequest(cid string, success bool, fileSize int64) {
+	type AddFileDownloadRequest struct {
+		CID       string    `json:"cid"`
+		Success   bool      `json:"success"`
+		FileSize  uint64    `json:"file_size"`
+		IsPremium bool      `json:"is_premium"`
+		Timestamp time.Time `json:"timestamp"`
+	}
+
+	i.fileDownloadRequestRabbitMQ.Publish(
+		&AddFileDownloadRequest{
+			CID:       cid,
+			Success:   success,
+			FileSize:  uint64(fileSize),
+			IsPremium: i.isDedicatedGateway,
+			Timestamp: time.Now(),
+		},
+	)
 }
