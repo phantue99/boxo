@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	aiozimageoptimizer "github.com/lamgiahungaioz/aioz-image-optimizer"
 	"io"
 	"log"
 	"mime/multipart"
@@ -23,6 +22,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	aiozimageoptimizer "github.com/lamgiahungaioz/aioz-image-optimizer"
 
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
@@ -34,7 +35,6 @@ import (
 	"github.com/ipfs/boxo/blockservice/internal"
 	"github.com/ipfs/boxo/blockstore"
 	"github.com/ipfs/boxo/exchange"
-	"github.com/ipfs/boxo/rabbitmq"
 	"github.com/ipfs/boxo/verifcid"
 )
 
@@ -122,23 +122,19 @@ type File struct {
 var (
 	uploader             string
 	pinningService       string
-	isDedicatedGateway   bool
-	maxSize              = 100 * 1024 * 1024 // 100MB
-	rabbitMQ             *rabbitmq.RabbitMQ
 	defaultChunkHash     = "122059948439065f29619ef41280cbb932be52c56d99c5966b65e0111239f098bbef"
 	blockEncryptionKey   string
 	encryptedBlockPrefix string
 	blockServiceApiKey   string
 )
 
-func InitBlockService(uploaderURL, pinningServiceURL string, _isDedicatedGateway bool, blockServiceKey string, amqpConnect string, encryptionKey string, encryptedBlockDataPrefix string) error {
+func InitBlockService(uploaderURL, pinningServiceURL string, blockServiceKey string, encryptionKey string, encryptedBlockDataPrefix string) error {
 	if uploaderURL != "" {
 		uploader = uploaderURL
 	}
 	if pinningServiceURL != "" {
 		pinningService = pinningServiceURL
 	}
-	isDedicatedGateway = _isDedicatedGateway
 
 	// Return an error if any of the URLs is empty.
 	if uploader == "" || pinningService == "" {
@@ -148,7 +144,6 @@ func InitBlockService(uploaderURL, pinningServiceURL string, _isDedicatedGateway
 	// 	Addrs: addrs,
 	// })
 
-	rabbitMQ = rabbitmq.InitializeRabbitMQ(amqpConnect, "bandwidth")
 	blockEncryptionKey = encryptionKey
 	encryptedBlockPrefix = encryptedBlockDataPrefix
 	blockServiceApiKey = blockServiceKey

@@ -3,11 +3,12 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"github.com/ipfs/boxo/rabbitmq"
-	"golang.org/x/time/rate"
 	"io"
 	"sync"
 	"time"
+
+	"github.com/ipfs/boxo/rabbitmq"
+	"golang.org/x/time/rate"
 
 	"github.com/ipfs/boxo/files"
 	"github.com/ipfs/boxo/path"
@@ -187,7 +188,6 @@ var _ IPFSBackend = (*ipfsBackendWithMetrics)(nil)
 func newHandlerWithMetrics(
 	c *Config,
 	backend IPFSBackend,
-	isDedicatedGateway bool,
 	domain string,
 	pinningApiEndpoint string,
 	blockServiceApiKey string,
@@ -198,7 +198,6 @@ func newHandlerWithMetrics(
 
 		config:                      c,
 		backend:                     newIPFSBackendWithMetrics(backend),
-		isDedicatedGateway:          isDedicatedGateway,
 		domain:                      domain,
 		pinningApiEndpoint:          pinningApiEndpoint,
 		blockServiceApiKey:          blockServiceApiKey,
