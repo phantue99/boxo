@@ -299,7 +299,7 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 
 	// ServeContent will take care of
 	// If-None-Match+Etag, Content-Length and range requests
-	_, dataSent, _ := serveContent(w, r, modtime, fileSize, limitReader)
+	_, dataSent, _ := serveContent(w, r, modtime, int64(size), limitReader)
 
 	// Was response successful?
 	if dataSent {
