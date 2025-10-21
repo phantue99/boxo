@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	aiozimageoptimizer "github.com/lamgiahungaioz/aioz-image-optimizer"
 	"io"
 	"mime"
 	"net/http"
@@ -12,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	aiozimageoptimizer "github.com/lamgiahungaioz/aioz-image-optimizer"
 
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/ipfs/boxo/path"
@@ -31,6 +32,7 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 	// Set Content-Disposition
 	name := addContentDispositionHeader(w, r, contentPath)
 
+	var size uint64
 	if fileSize == 0 {
 		// We override null files to 200 to avoid issues with fragment caching reverse proxies.
 		// Also whatever you are asking for, it's cheaper to just give you the complete file (nothing).
@@ -38,6 +40,8 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusOK)
 		return true
+	} else {
+		size = uint64(fileSize)
 	}
 
 	var content io.Reader = fileBytes
