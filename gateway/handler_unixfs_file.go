@@ -74,19 +74,27 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 		}
 
 		optimizerOpts := aiozimageoptimizer.DefaultOptions()
-		width := r.URL.Query().Get("width")
-		height := r.URL.Query().Get("height")
-		animated := r.URL.Query().Get("animated")
-		quality := r.URL.Query().Get("quality")
-		dpr := r.URL.Query().Get("dpr")
-		sharpen := r.URL.Query().Get("sharpen")
-		fit := r.URL.Query().Get("fit")
-		widthGravity := r.URL.Query().Get("width-gravity")
-		heightGravity := r.URL.Query().Get("height-gravity")
-		onError := r.URL.Query().Get("on-error")
+		width := r.URL.Query().Get("img-width")
+		height := r.URL.Query().Get("img-height")
+		animated := r.URL.Query().Get("img-anim")
+		quality := r.URL.Query().Get("img-quality")
+		dpr := r.URL.Query().Get("img-dpr")
+		sharpen := r.URL.Query().Get("img-sharpen")
+		fit := r.URL.Query().Get("img-fit")
+		gravity := r.URL.Query().Get("img-gravity")
+		onError := r.URL.Query().Get("img-onerror")
+		metadata := r.URL.Query().Get("img-metadata")
+		format := r.URL.Query().Get("img-format")
 
 		shouldRedirectToSourceImg := onError == "redirect"
-		shouldOptimize := width != "" || height != "" || animated != "" || quality != "" || dpr != "" || sharpen != "" || fit != ""
+		shouldOptimize := width != "" ||
+			height != "" ||
+			animated != "" ||
+			quality != "" ||
+			dpr != "" ||
+			sharpen != "" ||
+			fit != "" ||
+			format != ""
 
 		// Optimize if options are provided
 		if strings.HasPrefix(ctype, "image/") && shouldOptimize {
@@ -170,35 +178,76 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 				}
 				optimizerOpts.Sharpen = parsedSharpen
 			}
-			if widthGravity != "" {
-				parsedWidthGravity, err := strconv.ParseFloat(widthGravity, 32)
-				if err != nil {
-					errMessage = fmt.Sprintf("invalid value for width-gravity: %s", widthGravity)
-					code = http.StatusBadRequest
-					return false
+			if format != "" {
+				switch format {
+				case "webp":
+					acceptHeader := r.Header.Get("Accept")
+
+					isAcceptWebp := strings.Contains(acceptHeader, "image/webp")
+					isAcceptAll := strings.Contains(acceptHeader, "*/*")
+					optimizerOpts.ShouldTransformToWebp = isAcceptWebp || isAcceptAll
+				default:
+					optimizerOpts.ShouldTransformToWebp = false
 				}
-				if parsedWidthGravity > 1 {
-					parsedWidthGravity = 1
-				}
-				if parsedWidthGravity < 0 {
-					parsedWidthGravity = 0
-				}
-				optimizerOpts.WidthGravity = float32(parsedWidthGravity)
 			}
-			if heightGravity != "" {
-				parsedHeightGravity, err := strconv.ParseFloat(heightGravity, 32)
-				if err != nil {
-					errMessage = fmt.Sprintf("invalid value for height-gravity: %s", heightGravity)
+			if gravity != "" {
+				switch gravity {
+				case "auto":
+					optimizerOpts.AutoDetermineGravity = true
+				case "left":
+					optimizerOpts.GravitySide = aiozimageoptimizer.GravityLeft
+				case "right":
+					optimizerOpts.GravitySide = aiozimageoptimizer.GravityRight
+				case "top":
+					optimizerOpts.GravitySide = aiozimageoptimizer.GravityTop
+				case "bottom":
+					optimizerOpts.GravitySide = aiozimageoptimizer.GravityBottom
+				default:
+					if !strings.Contains(gravity, "x") {
+						errMessage = fmt.Sprintf("invalid value for gravity: %s", gravity)
+						code = http.StatusBadRequest
+						return false
+					}
+					parts := strings.Split(gravity, "x")
+					if len(parts) != 2 {
+						errMessage = fmt.Sprintf("invalid value for gravity: %s", gravity)
+						code = http.StatusBadRequest
+						return false
+					}
+					widthGravityStr := parts[0]
+					heightGravityStr := parts[1]
+
+					parsedWidthGravity, err := strconv.ParseFloat(widthGravityStr, 32)
+					if err != nil {
+						errMessage = fmt.Sprintf("invalid value for width gravity: %s", widthGravityStr)
+						code = http.StatusBadRequest
+						return false
+					}
+					optimizerOpts.WidthGravity = float32(parsedWidthGravity)
+
+					parsedHeightGravity, err := strconv.ParseFloat(heightGravityStr, 32)
+					if err != nil {
+						errMessage = fmt.Sprintf("invalid value for height gravity: %s", heightGravityStr)
+						code = http.StatusBadRequest
+						return false
+					}
+					optimizerOpts.HeightGravity = float32(parsedHeightGravity)
+				}
+			}
+
+			if metadata != "" {
+				switch metadata {
+				case "keep":
+					optimizerOpts.MetadataKeepMode = aiozimageoptimizer.MetadataKeep
+				case "copyright":
+					optimizerOpts.MetadataKeepMode = aiozimageoptimizer.MetadataCopyright
+				case "none":
+					optimizerOpts.MetadataKeepMode = aiozimageoptimizer.MetadataNone
+				default:
+					errMessage = fmt.Sprintf("invalid value for metadata: %s", metadata)
 					code = http.StatusBadRequest
 					return false
 				}
-				if parsedHeightGravity > 1 {
-					parsedHeightGravity = 1
-				}
-				if parsedHeightGravity < 0 {
-					parsedHeightGravity = 0
-				}
-				optimizerOpts.HeightGravity = float32(parsedHeightGravity)
 			}
 
 			switch fit {
@@ -217,13 +266,19 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 			}
 			optimizerOpts.PreserveAnimation = animated == "true"
 			optimizer := aiozimageoptimizer.OptimizerFromMimeType(ctype)
-			content, err = optimizer.Optimize(content, optimizerOpts)
+			content, size, err = optimizer.Optimize(content, optimizerOpts)
 			if err != nil {
 				errMessage = fmt.Sprintf("error optimizing content: %s", err.Error())
 				code = http.StatusInternalServerError
 				return false
 			}
+			if optimizerOpts.ShouldTransformToWebp {
+				ctype = "image/webp"
+			}
+			w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
+			w.Header().Set("Content-Type", "image/webp")
 		}
+
 		// Strip the encoding from the HTML Content-Type header and let the
 		// browser figure it out.
 		//
