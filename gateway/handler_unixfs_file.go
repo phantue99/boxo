@@ -111,6 +111,7 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 				if len(errMessage) == 0 {
 					return
 				}
+				i.addFileDownloadRequest(resolvedPath.RootCid().String(), size, false)
 				if shouldRedirectToSourceImg {
 					urlWithoutQuery := fmt.Sprintf("https://%s%s", r.Host, r.URL.Path)
 					http.Redirect(w, r, urlWithoutQuery, http.StatusPermanentRedirect)
@@ -306,6 +307,8 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 		// Update metrics
 		i.unixfsFileGetMetric.WithLabelValues(contentPath.Namespace()).Observe(time.Since(begin).Seconds())
 	}
+
+	i.addFileDownloadRequest(resolvedPath.RootCid().String(), size, true)
 
 	return dataSent
 }

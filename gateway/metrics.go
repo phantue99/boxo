@@ -8,6 +8,7 @@ import (
 
 	"github.com/ipfs/boxo/files"
 	"github.com/ipfs/boxo/path"
+	"github.com/ipfs/boxo/rabbitmq"
 	"github.com/ipfs/go-cid"
 	prometheus "github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
@@ -181,11 +182,17 @@ func (b *ipfsBackendWithMetrics) GetDNSLinkRecord(ctx context.Context, fqdn stri
 
 var _ IPFSBackend = (*ipfsBackendWithMetrics)(nil)
 
-func newHandlerWithMetrics(c *Config, backend IPFSBackend, isDedicatedGateway bool) *handler {
+func newHandlerWithMetrics(c *Config, backend IPFSBackend, isDedicatedGateway bool, rabbitmqConnectionString string) *handler {
+	fileDownloadRabbitmq, err := rabbitmq.NewRabbitMQ(rabbitmqConnectionString, "file_download")
+	if err != nil {
+		panic(fmt.Errorf("failed to create file download rabbitmq: %v", err))
+	}
+
 	i := &handler{
-		config:             c,
-		backend:            newIPFSBackendWithMetrics(backend),
-		isDedicatedGateway: isDedicatedGateway,
+		config:                      c,
+		backend:                     newIPFSBackendWithMetrics(backend),
+		isDedicatedGateway:          isDedicatedGateway,
+		fileDownloadRequestRabbitMQ: fileDownloadRabbitmq,
 
 		// Response-type specific metrics
 		// ----------------------------
