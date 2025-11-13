@@ -23,7 +23,8 @@ var (
 	DirectoryTemplate *template.Template
 	DagTemplate       *template.Template
 	ErrorTemplate     *template.Template
-	PaywallTemplate   *template.Template
+	//go:embed paywall.html
+	PaywallTemplate string
 )
 
 func init() {
@@ -74,12 +75,6 @@ func initTemplates() {
 
 	// Error template
 	ErrorTemplate, err = BuildTemplate(assets, "error.html")
-	if err != nil {
-		panic(err)
-	}
-
-	// Paywall template
-	PaywallTemplate, err = BuildTemplate(assets, "paywall.html")
 	if err != nil {
 		panic(err)
 	}

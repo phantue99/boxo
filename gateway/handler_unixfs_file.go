@@ -34,12 +34,10 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return false
 		case http.StatusPaymentRequired:
-			err = assets.PaywallTemplate.Execute(w, nil)
-			if err != nil {
-				panic(err)
-			}
+			w.Write([]byte(assets.PaywallTemplate))
 			return false
 		default:
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	}
 
