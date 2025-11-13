@@ -35,40 +35,6 @@ func checkX402(w http.ResponseWriter, r *http.Request) (string, int, error) {
 		return "", http.StatusInternalServerError, err
 	}
 
-	paymentHeader := r.Header.Get("X-PAYMENT")
-	paymentPayload, err := x402.DecodePaymentPayloadFromBase64(paymentHeader)
-	if err != nil {
-		fmt.Println("failed to decode payment header: ", err)
-		return "", http.StatusPaymentRequired, err
-	}
-
-	response, err := facilitatorClient.Verify(paymentPayload, paymentRequirements)
-	if err != nil {
-		fmt.Println("failed to verify payment: ", err)
-		return "", http.StatusInternalServerError, err
-	}
-
-	if !response.IsValid {
-		fmt.Println("invalid payment: ", response.InvalidReason)
-		return "", http.StatusPaymentRequired, errors.New(*response.InvalidReason)
-	}
-
-	fmt.Println("payment verified, proceeding")
-
-	settleResponse, err := facilitatorClient.Settle(paymentPayload, paymentRequirements)
-	if err != nil {
-		fmt.Println("failed to settle payment: ", err)
-		return "", http.StatusInternalServerError, err
-	}
-
-	settleResponseHeader, err := settleResponse.EncodeToBase64String()
-	if err != nil {
-		fmt.Println("failed to encode settle response: ", err)
-		return "", http.StatusInternalServerError, err
-	}
-
-	w.Header().Set("X-PAYMENT-RESPONSE", settleResponseHeader)
-
 	jsonPaymentReq, _ := json.Marshal(paymentRequirements)
 
 	configScript := fmt.Sprintf(`
@@ -86,10 +52,44 @@ func checkX402(w http.ResponseWriter, r *http.Request) (string, int, error) {
 			console.log("payment requirements initialized: ", window.x402)
 		</script>
 	`,
-		paymentPayload.Payload.Authorization.Value,
+		paymentRequirements.MaxAmountRequired,
 		string(jsonPaymentReq),
 		r.URL.Path,
 	)
+
+	paymentHeader := r.Header.Get("X-PAYMENT")
+	paymentPayload, err := x402.DecodePaymentPayloadFromBase64(paymentHeader)
+	if err != nil {
+		fmt.Println("failed to decode payment header: ", err)
+		return configScript, http.StatusPaymentRequired, err
+	}
+
+	response, err := facilitatorClient.Verify(paymentPayload, paymentRequirements)
+	if err != nil {
+		fmt.Println("failed to verify payment: ", err)
+		return configScript, http.StatusInternalServerError, err
+	}
+
+	if !response.IsValid {
+		fmt.Println("invalid payment: ", response.InvalidReason)
+		return configScript, http.StatusPaymentRequired, errors.New(*response.InvalidReason)
+	}
+
+	fmt.Println("payment verified, proceeding")
+
+	settleResponse, err := facilitatorClient.Settle(paymentPayload, paymentRequirements)
+	if err != nil {
+		fmt.Println("failed to settle payment: ", err)
+		return configScript, http.StatusInternalServerError, err
+	}
+
+	settleResponseHeader, err := settleResponse.EncodeToBase64String()
+	if err != nil {
+		fmt.Println("failed to encode settle response: ", err)
+		return configScript, http.StatusInternalServerError, err
+	}
+
+	w.Header().Set("X-PAYMENT-RESPONSE", settleResponseHeader)
 
 	return configScript, http.StatusOK, nil
 }
