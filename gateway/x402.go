@@ -21,7 +21,7 @@ func checkX402(w http.ResponseWriter, r *http.Request) (string, int, error) {
 	paymentRequirements := &x402.PaymentRequirements{
 		Scheme:            "exact",
 		Network:           network,
-		MaxAmountRequired: "0.01",
+		MaxAmountRequired: "1000",
 		Resource:          "http://localhost:8181/" + r.URL.Path,
 		Description:       "File pin",
 		MimeType:          "*/*",
