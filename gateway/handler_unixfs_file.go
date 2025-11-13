@@ -34,7 +34,7 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return false
 		case http.StatusPaymentRequired:
-			final := strings.ReplaceAll(assets.PaywallTemplate, "</header>", configScript+"</header>")
+			final := strings.ReplaceAll(assets.PaywallTemplate, "</head>", configScript+"</head>")
 			w.Write([]byte(final))
 			return false
 		default:
