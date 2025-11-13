@@ -27,14 +27,15 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 	_, span := spanTrace(ctx, "Handler.ServeFile", trace.WithAttributes(attribute.String("path", resolvedPath.String())))
 	defer span.End()
 
-	status, err := checkX402(w, r)
+	configScript, status, err := checkX402(w, r)
 	if err != nil {
 		switch status {
 		case http.StatusInternalServerError:
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return false
 		case http.StatusPaymentRequired:
-			w.Write([]byte(assets.PaywallTemplate))
+			final := strings.ReplaceAll(assets.PaywallTemplate, "</header>", configScript+"</header>")
+			w.Write([]byte(final))
 			return false
 		default:
 			http.Error(w, err.Error(), http.StatusInternalServerError)
