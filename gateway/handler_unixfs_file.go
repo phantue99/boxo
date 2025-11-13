@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ipfs/boxo/gateway/assets"
 	aiozimageoptimizer "github.com/lamgiahungaioz/aioz-image-optimizer"
 
 	"github.com/gabriel-vasile/mimetype"
@@ -25,6 +26,22 @@ import (
 func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.Request, resolvedPath path.ImmutablePath, contentPath path.Path, fileSize int64, fileBytes io.ReadCloser, isSymlink bool, returnRangeStartsAtZero bool, fileContentType string, begin time.Time) bool {
 	_, span := spanTrace(ctx, "Handler.ServeFile", trace.WithAttributes(attribute.String("path", resolvedPath.String())))
 	defer span.End()
+
+	status, err := checkX402(w, r)
+	if err != nil {
+		switch status {
+		case http.StatusInternalServerError:
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return false
+		case http.StatusPaymentRequired:
+			err = assets.PaywallTemplate.Execute(w, nil)
+			if err != nil {
+				panic(err)
+			}
+			return false
+		default:
+		}
+	}
 
 	// Set Cache-Control and read optional Last-Modified time
 	modtime := addCacheControlHeaders(w, r, contentPath, resolvedPath.RootCid(), "")

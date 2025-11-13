@@ -23,6 +23,7 @@ var (
 	DirectoryTemplate *template.Template
 	DagTemplate       *template.Template
 	ErrorTemplate     *template.Template
+	PaywallTemplate   *template.Template
 )
 
 func init() {
@@ -76,6 +77,12 @@ func initTemplates() {
 	if err != nil {
 		panic(err)
 	}
+
+	// Paywall template
+	PaywallTemplate, err = BuildTemplate(assets, "paywall.html")
+	if err != nil {
+		panic(err)
+	}
 }
 
 type MenuItem struct {
@@ -110,7 +117,7 @@ type DirectoryTemplateData struct {
 	Listing     []DirectoryItem
 	Size        string
 	Path        string
-	GatewayURL string
+	GatewayURL  string
 	Breadcrumbs []Breadcrumb
 	BackLink    string
 	Hash        string
