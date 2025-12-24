@@ -258,7 +258,23 @@ func (s *blockService) AddBlock(ctx context.Context, o blocks.Block) error {
 	ctx, span := internal.StartSpan(ctx, "blockService.AddBlock")
 	defer span.End()
 
-	err := addBlock(ctx, o, s.allowlist)
+	// BEGIN add public node
+	c := o.Cid()
+	err := verifcid.ValidateCid(s.allowlist, c) // hash security
+	if err != nil {
+		return err
+	}
+	if s.checkFirst {
+		if has, err := s.blockstore.Has(ctx, c); has || err != nil {
+			return err
+		}
+	}
+	if err := s.blockstore.Put(ctx, o); err != nil {
+		return err
+	}
+
+
+	err = addBlock(ctx, o, s.allowlist)
 	if err != nil {
 		return err
 	}
@@ -291,7 +307,8 @@ func addBlock(ctx context.Context, o blocks.Block, allowlist verifcid.Allowlist)
 
 	data, err = rdb.Get(ctx, hash).Bytes()
 	if err == nil {
-		var f fileInfo
+		//toilacube: check if the hash is already in the database (file record already exists)
+	var f fileInfo
 
 		if err := json.Unmarshal(data, &f); err != nil {
 			return nil
@@ -300,6 +317,7 @@ func addBlock(ctx context.Context, o blocks.Block, allowlist verifcid.Allowlist)
 		return err
 	}
 
+	//toilacube: upload files to DePin
 	fileRecordID, files, err = uploadFiles([]blocks.Block{o})
 	if err != nil {
 		return fmt.Errorf("[addBlock] failed to upload file and get file record ID: %w", err)
@@ -324,6 +342,7 @@ func addBlock(ctx context.Context, o blocks.Block, allowlist verifcid.Allowlist)
 	return nil
 }
 
+//toilacube: uploadFiles method to upload files to dePin using packUpload api
 func uploadFiles(blks []blocks.Block) (string, []File, error) {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
@@ -440,7 +459,28 @@ func (s *blockService) AddBlocks(ctx context.Context, bs []blocks.Block) error {
 	ctx, span := internal.StartSpan(ctx, "blockService.AddBlocks")
 	defer span.End()
 
-	toput, err := addBlocks(ctx, bs, s.allowlist)
+	// BEGIN add public node
+	var toput []blocks.Block
+	if s.checkFirst {
+		toput = make([]blocks.Block, 0, len(bs))
+		for _, b := range bs {
+			has, err := s.blockstore.Has(ctx, b.Cid())
+			if err != nil {
+				return err
+			}
+			if !has {
+				toput = append(toput, b)
+			}
+		}
+	} else {
+		toput = bs
+	}
+
+	if len(toput) == 0 {
+		return nil
+	}
+
+	err := s.blockstore.PutMany(ctx, toput)
 	if err != nil {
 		return err
 	}
@@ -451,6 +491,14 @@ func (s *blockService) AddBlocks(ctx context.Context, bs []blocks.Block) error {
 			logger.Errorf("NotifyNewBlocks: %s", err.Error())
 		}
 	}
+
+	toput, err = addBlocks(ctx, bs, s.allowlist)
+	if err != nil {
+		return err
+	}
+
+	logger.Debugf("BlockService.BlockAdded %d blocks", len(toput))
+	
 	return nil
 }
 
