@@ -142,17 +142,20 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 				optimizerOpts.Height = uint(parsedHeight)
 			}
 			if quality != "" {
-				parsedQuality, err := strconv.ParseUint(quality, 10, 7) // 7-bit = 127, range should be 0-100
+				parsedQuality, err := strconv.ParseUint(quality, 10, 32)
 				if err != nil {
-					errMessage = fmt.Sprintf("invalid value for quality: %s", quality)
+					errMessage = fmt.Sprintf("invalid syntax for quality: %s", quality)
 					code = http.StatusBadRequest
 					return false
 				}
-				parsedQualityUint := uint(parsedQuality)
-				if parsedQualityUint > 100 {
-					parsedQualityUint = 100
+
+				if parsedQuality < 1 || parsedQuality > 100 {
+					errMessage = fmt.Sprintf("quality must be between 1 and 100, got: %d", parsedQuality)
+					code = http.StatusBadRequest
+					return false
 				}
-				optimizerOpts.Quality = int(parsedQualityUint)
+
+				optimizerOpts.Quality = int(parsedQuality)
 			}
 			if dpr != "" {
 				// Notes: DPR should be in range 1-3
@@ -227,11 +230,21 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 						code = http.StatusBadRequest
 						return false
 					}
+					if parsedWidthGravity < 0 || parsedWidthGravity > 1 {
+						errMessage = fmt.Sprintf("invalid value for width gravity: %s", parsedWidthGravity)
+						code = http.StatusBadRequest
+						return false
+					}
 					optimizerOpts.WidthGravity = float32(parsedWidthGravity)
 
 					parsedHeightGravity, err := strconv.ParseFloat(heightGravityStr, 32)
 					if err != nil {
 						errMessage = fmt.Sprintf("invalid value for height gravity: %s", heightGravityStr)
+						code = http.StatusBadRequest
+						return false
+					}
+					if parsedHeightGravity < 0 || parsedHeightGravity > 1 {
+						errMessage = fmt.Sprintf("invalid value for height gravity: %s", parsedHeightGravity)
 						code = http.StatusBadRequest
 						return false
 					}
