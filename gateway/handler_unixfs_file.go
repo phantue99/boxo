@@ -144,7 +144,7 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 			if quality != "" {
 				parsedQuality, err := strconv.ParseUint(quality, 10, 32)
 				if err != nil {
-					errMessage = fmt.Sprintf("invalid syntax for quality: %s", quality)
+					errMessage = fmt.Sprintf("invalid value for quality: %s", quality)
 					code = http.StatusBadRequest
 					return false
 				}
