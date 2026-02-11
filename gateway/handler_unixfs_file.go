@@ -130,12 +130,22 @@ func (i *handler) serveFile(ctx context.Context, w http.ResponseWriter, r *http.
 					code = http.StatusBadRequest
 					return false
 				}
+				if parsedWidth == 0 {
+					errMessage = "width must be greater than zero"
+					code = http.StatusBadRequest
+					return false
+				}
 				optimizerOpts.Width = uint(parsedWidth)
 			}
 			if height != "" {
 				parsedHeight, err := strconv.ParseUint(height, 10, 16) // 16-bit = 65535, should be enough
 				if err != nil {
 					errMessage = fmt.Sprintf("invalid value for height: %s", height)
+					code = http.StatusBadRequest
+					return false
+				}
+				if parsedHeight == 0 {
+					errMessage = "height must be greater than zero"
 					code = http.StatusBadRequest
 					return false
 				}
